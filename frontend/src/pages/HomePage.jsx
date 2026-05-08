@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import SectionHeading from '../components/SectionHeading.jsx';
+import berryImage from '../../assets/berry.jpg';
 
 const benefits = [
   { title: 'Flexible Work', text: 'Seasonal work that adapts to the harvest schedule.' },
@@ -27,7 +28,10 @@ export default function HomePage() {
   return (
     <>
       <section className="relative overflow-hidden bg-forest-900 text-white">
-        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&w=1600&q=80')] bg-cover bg-center opacity-25" />
+        <div
+          className="absolute inset-0 bg-cover bg-center opacity-125"
+          style={{ backgroundImage: `url(${berryImage})` }}
+        />
         <div className="absolute inset-0 bg-hero-gradient" />
         <div className="relative mx-auto grid min-h-[82vh] max-w-7xl items-center px-4 py-24 sm:px-6 lg:grid-cols-2 lg:px-8">
           <div className="max-w-2xl">
