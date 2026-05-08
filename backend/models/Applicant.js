@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const applicantSchema = new mongoose.Schema(
   {
     fullName: { type: String, required: true, trim: true, maxlength: 120 },
-    email: { type: String, required: true, trim: true, lowercase: true, maxlength: 254 },
+    email: { type: String, required: true, trim: true, lowercase: true, maxlength: 254, unique: true },
     phoneNumber: { type: String, required: true, trim: true, maxlength: 32 },
     hasDrivingLicense: { type: Boolean, required: true },
     hasOwnCar: { type: Boolean, required: true },
@@ -15,7 +15,9 @@ const applicantSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-applicantSchema.index({ email: 1, createdAt: -1 });
+// ensure a unique index on email for duplicate protection
+applicantSchema.index({ email: 1 }, { unique: true, background: true });
+applicantSchema.index({ createdAt: -1 });
 
 const Applicant = mongoose.model('Applicant', applicantSchema);
 

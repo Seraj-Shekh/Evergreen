@@ -15,6 +15,16 @@ dotenv.config();
 
 const app = express();
 
+// Debug: show whether BREVO_API_KEY is available at app startup (masked)
+try {
+  const raw = process.env.BREVO_API_KEY;
+  const key = raw ? String(raw).replace(/^['"]|['"]$/g, '') : undefined;
+  const masked = key ? `${key.slice(0, 8)}...` : 'none';
+  console.log(`BREVO_API_KEY at app startup (masked): ${masked}`);
+} catch (e) {
+  // ignore
+}
+
 const allowedOrigins = [process.env.CLIENT_URL].filter(Boolean);
 
 const apiLimiter = rateLimit({

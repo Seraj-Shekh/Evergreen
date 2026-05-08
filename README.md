@@ -56,6 +56,35 @@ npm run dev
 - Set `CLIENT_URL` in the backend to your Netlify URL
 - Set `VITE_API_BASE_URL` in the frontend to your Render API URL
 
+### Brevo (Transactional Email)
+
+- In Render set the following environment variables for the backend service:
+	- `BREVO_API_KEY` — your Brevo API key (keep secret)
+	- `BREVO_SENDER_EMAIL` — the verified sender email in Brevo
+	- `BREVO_SENDER_NAME` — sender display name
+- Verify the sender email in your Brevo account before sending; otherwise deliveries will fail.
+
+### Backend deployment checklist
+
+- Ensure `backend/.env` is NOT committed — the repo's `.gitignore` already excludes `.env`.
+- Use `backend/.env.example` as a template for the required variables.
+- On Render set `MONGO_URL` (MongoDB Atlas), `DB_NAME`, `PORT` (optional), and `CLIENT_URL`.
+- Ensure the backend `start` script runs `node server.js` (already set in `package.json`).
+
+### Duplicate application prevention
+
+- The backend enforces a unique index on `email` and rejects duplicate applications with HTTP 409.
+- If a client tries to submit the same email twice, the API will return:
+
+```json
+{ "success": false, "message": "An application with this email address already exists" }
+```
+
+### Final notes
+
+- Double-check environment variables are configured in the deployment provider UI and not stored in the repo.
+- After deployment, test submitting an application and confirm you receive the Brevo confirmation email.
+
 ## Notes
 
 - Do not commit real secrets.

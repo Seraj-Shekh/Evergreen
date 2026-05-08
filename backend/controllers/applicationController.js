@@ -1,4 +1,5 @@
 import Applicant from '../models/Applicant.js';
+import emailService from '../services/emailService.js';
 
 const toBoolean = value => value === true || value === 'true' || value === 'Yes' || value === 'yes';
 
@@ -17,9 +18,20 @@ export const createApplication = async (req, res, next) => {
       acceptedTerms,
     } = req.body;
 
+    const normalizedEmail = normalizeText(email).toLowerCase();
+
+    // Check for existing application with same email (case-insensitive)
+    const existing = await Applicant.findOne({ email: normalizedEmail }).lean();
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: 'An application with this email address already exists',
+      });
+    }
+
     const applicant = await Applicant.create({
       fullName: normalizeText(fullName),
-      email: normalizeText(email).toLowerCase(),
+      email: normalizedEmail,
       phoneNumber: normalizeText(phoneNumber),
       hasDrivingLicense: toBoolean(hasDrivingLicense),
       hasOwnCar: toBoolean(hasOwnCar),
@@ -28,6 +40,8 @@ export const createApplication = async (req, res, next) => {
       acceptedTerms: toBoolean(acceptedTerms),
       status: 'pending',
     });
+
+    await emailService.sendApplicationConfirmation(applicant);
 
     return res.status(201).json({
       success: true,

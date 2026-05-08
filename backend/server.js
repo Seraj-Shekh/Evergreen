@@ -1,3 +1,8 @@
+import dotenv from 'dotenv';
+
+// Load environment variables before importing other modules
+dotenv.config();
+
 import app from './app.js';
 import connectDB from './config/db.js';
 
