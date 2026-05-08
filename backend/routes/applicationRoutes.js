@@ -4,13 +4,18 @@ import { createApplication } from '../controllers/applicationController.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 
 const router = Router();
+const phoneRegex = /^(?=(?:.*\d){7,15}$)[0-9+()\-\s]{7,32}$/;
 
 router.post(
   '/',
   [
     body('fullName').trim().notEmpty().withMessage('Full name is required').isLength({ max: 120 }),
-    body('email').trim().notEmpty().withMessage('Email is required').isEmail().withMessage('Valid email is required').normalizeEmail(),
-    body('phoneNumber').trim().notEmpty().withMessage('Phone number is required').isLength({ min: 7, max: 32 }),
+    body('email').trim().notEmpty().withMessage('Email is required').isEmail().withMessage('Valid email is required').isLength({ max: 254 }).normalizeEmail(),
+    body('phoneNumber')
+      .trim()
+      .notEmpty().withMessage('Phone number is required')
+      .matches(phoneRegex)
+      .withMessage('Enter a valid phone number'),
     body('hasDrivingLicense').isBoolean().withMessage('Driving license response is required'),
     body('hasOwnCar').isBoolean().withMessage('Car ownership response is required'),
     body('carPlateNumber').custom((value, { req }) => {

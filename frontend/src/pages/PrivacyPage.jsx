@@ -20,9 +20,22 @@ export default function PrivacyPage() {
         <h3>Your rights</h3>
         <p>Applicants may request access, correction, deletion, or restriction of their data, and may object to processing in certain situations.</p>
         <h3>Contact</h3>
-        <p>Contact placeholder: privacy@example.com</p>
+        <p>
+          For privacy requests or deletion requests, please contact{' '}
+          <span className="font-medium text-slate-800">JSC enterprises</span> at{' '}
+          <a className="text-forest-700 underline decoration-forest-300 underline-offset-4" href="mailto:jeevanchhetri465@gmail.com">
+            jeevanchhetri465@gmail.com
+          </a>{' '}
+          or call{' '}
+          <a className="text-forest-700 underline decoration-forest-300 underline-offset-4" href="tel:+358449500808">
+            +358449500808
+          </a>.
+        </p>
+        <p><span className="font-medium text-slate-800">Company name:</span> JSC enterprises</p>
+        <p><span className="font-medium text-slate-800">Address:</span> Oulu 90130 Ylioppilaantie 10B room 28</p>
+        <p><span className="font-medium text-slate-800">Business ID:</span> 3586597-9</p>
         <h3>Deletion requests</h3>
-        <p>To request deletion of your application data, contact us using the placeholder email above.</p>
+        <p>To request deletion of your application data, contact us using the details above.</p>
       </div>
     </section>
   );

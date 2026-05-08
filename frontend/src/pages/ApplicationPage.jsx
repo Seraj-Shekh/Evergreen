@@ -15,7 +15,7 @@ const initialForm = {
 };
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const phoneRegex = /^[0-9+()\-\s]{7,32}$/;
+const phoneRegex = /^(?=(?:.*\d){7,15}$)[0-9+()\-\s]{7,32}$/;
 
 export default function ApplicationPage() {
   const navigate = useNavigate();
@@ -30,7 +30,7 @@ export default function ApplicationPage() {
     const nextErrors = {};
 
     if (!form.fullName.trim()) nextErrors.fullName = 'Full name is required.';
-    if (!emailRegex.test(form.email.trim())) nextErrors.email = 'Enter a valid email address.';
+    if (!emailRegex.test(form.email.trim()) || form.email.trim().length > 254) nextErrors.email = 'Enter a valid email address.';
     if (!phoneRegex.test(form.phoneNumber.trim())) nextErrors.phoneNumber = 'Enter a valid phone number.';
     if (requiresCarPlate && !form.carPlateNumber.trim()) nextErrors.carPlateNumber = 'Car plate number is required when you have a car.';
     if (!form.acceptedTerms) nextErrors.acceptedTerms = 'You must accept the Terms & Conditions and Privacy Policy.';

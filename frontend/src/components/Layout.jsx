@@ -36,12 +36,39 @@ export default function Layout() {
             <p className="mt-3 max-w-md text-sm leading-6 text-slate-600">
               Seasonal berry picking opportunities in Finland with a professional recruitment experience.
             </p>
+            <p className="mt-4 text-sm text-slate-500">
+              Web by{' '}
+              <a
+                href="https://serajshekh.com"
+                target="_blank"
+                rel="noreferrer"
+                className="font-semibold text-forest-700 underline decoration-forest-300 decoration-2 underline-offset-4 transition hover:text-forest-800"
+              >
+                Seraj Shekh
+              </a>
+            </p>
           </div>
           <div>
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Contact</h3>
-            <p className="mt-3 text-sm text-slate-600">contact@example.com</p>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Support</h3>
+            <div className="mt-4 space-y-4 text-sm leading-6 text-slate-600">
+              <p>
+                <span className="block font-medium text-slate-800">For website problems or bugs</span>
+                <a className="text-forest-700 underline decoration-forest-300 underline-offset-4" href="mailto:contact@serajshekh.fi">
+                  contact@serajshekh.fi
+                </a>
+              </p>
+              <p>
+                <span className="block font-medium text-slate-800">For other work related queries</span>
+                <span>JSC enterprises</span>
+              </p>
+            </div>
           </div>
-          <div className="flex flex-col gap-3 text-sm">
+          <div className="flex flex-col gap-3 text-sm text-slate-600">
+            <p><span className="font-medium text-slate-800">Company name:</span> JSC enterprises</p>
+            <p><span className="font-medium text-slate-800">Address:</span> Oulu 90130 Ylioppilaantie 10B room 28</p>
+            <p><span className="font-medium text-slate-800">Email:</span> <a className="text-forest-700 underline decoration-forest-300 underline-offset-4" href="mailto:jeevanchhetri465@gmail.com">jeevanchhetri465@gmail.com</a></p>
+            <p><span className="font-medium text-slate-800">Phone:</span> <a className="text-forest-700 underline decoration-forest-300 underline-offset-4" href="tel:+358449500808">+358449500808</a></p>
+            <p><span className="font-medium text-slate-800">Business ID:</span> 3586597-9</p>
             <Link className="text-slate-600 hover:text-forest-700" to="/privacy-policy">Privacy Policy</Link>
             <Link className="text-slate-600 hover:text-forest-700" to="/terms">Terms & Conditions</Link>
           </div>
