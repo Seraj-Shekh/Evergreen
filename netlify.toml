@@ -1,0 +1,12 @@
+[build]
+  # Build from the frontend subdirectory in this monorepo
+  base = "frontend"
+  # 'publish' is relative to the base directory above
+  publish = "dist"
+  # Install and build inside the frontend directory
+  command = "npm install && npm run build"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
