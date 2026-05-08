@@ -4,7 +4,9 @@ import { createApplication } from '../controllers/applicationController.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 
 const router = Router();
-const phoneRegex = /^(?=(?:.*\d){7,15}$)[0-9+()\-\s]{7,32}$/;
+const phoneRegex = /^(?:\+358|00358|0)(?:[\s-]?\d){5,10}$/;
+
+const normalizePhoneNumber = value => value.replace(/[\s()-]/g, '');
 
 router.post(
   '/',
@@ -14,8 +16,11 @@ router.post(
     body('phoneNumber')
       .trim()
       .notEmpty().withMessage('Phone number is required')
-      .matches(phoneRegex)
-      .withMessage('Enter a valid phone number'),
+      .custom(value => {
+        const normalized = normalizePhoneNumber(String(value || '').trim());
+        return phoneRegex.test(normalized) && /^((?:\+358|00358)\d{5,10}|0\d{5,10})$/.test(normalized);
+      })
+      .withMessage('Enter a valid Finnish phone number, for example 040 123 4567 or +358 40 123 4567'),
     body('hasDrivingLicense').isBoolean().withMessage('Driving license response is required'),
     body('hasOwnCar').isBoolean().withMessage('Car ownership response is required'),
     body('carPlateNumber').custom((value, { req }) => {

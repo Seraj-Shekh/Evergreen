@@ -14,8 +14,10 @@ const initialForm = {
   acceptedTerms: false,
 };
 
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const phoneRegex = /^(?=(?:.*\d){7,15}$)[0-9+()\-\s]{7,32}$/;
+const emailRegex = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
+const phoneRegex = /^(?:\+358|00358|0)(?:[\s-]?\d){5,10}$/;
+
+const normalizePhoneNumber = value => value.replace(/[\s()-]/g, '');
 
 export default function ApplicationPage() {
   const navigate = useNavigate();
@@ -28,10 +30,13 @@ export default function ApplicationPage() {
 
   const validate = () => {
     const nextErrors = {};
+    const phoneValue = normalizePhoneNumber(form.phoneNumber.trim());
 
     if (!form.fullName.trim()) nextErrors.fullName = 'Full name is required.';
     if (!emailRegex.test(form.email.trim()) || form.email.trim().length > 254) nextErrors.email = 'Enter a valid email address.';
-    if (!phoneRegex.test(form.phoneNumber.trim())) nextErrors.phoneNumber = 'Enter a valid phone number.';
+    if (!phoneRegex.test(phoneValue) || !/^((?:\+358|00358)\d{5,10}|0\d{5,10})$/.test(phoneValue)) {
+      nextErrors.phoneNumber = 'Enter a valid Finnish phone number, for example 040 123 4567 or +358 40 123 4567.';
+    }
     if (requiresCarPlate && !form.carPlateNumber.trim()) nextErrors.carPlateNumber = 'Car plate number is required when you have a car.';
     if (!form.acceptedTerms) nextErrors.acceptedTerms = 'You must accept the Terms & Conditions and Privacy Policy.';
 
@@ -87,10 +92,19 @@ export default function ApplicationPage() {
             <input name="fullName" value={form.fullName} onChange={handleChange} className="input" />
           </Field>
           <Field label="Email Address" error={errors.email}>
-            <input name="email" type="email" value={form.email} onChange={handleChange} className="input" />
+            <input name="email" type="email" inputMode="email" autoComplete="email" value={form.email} onChange={handleChange} className="input" />
           </Field>
-          <Field label="Phone Number" error={errors.phoneNumber}>
-            <input name="phoneNumber" value={form.phoneNumber} onChange={handleChange} className="input" />
+          <Field label="Finnish Phone Number" error={errors.phoneNumber}>
+            <input
+              name="phoneNumber"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="040 123 4567"
+              value={form.phoneNumber}
+              onChange={handleChange}
+              className="input"
+            />
           </Field>
           <Field label="Do you have a driving license?">
             <select name="hasDrivingLicense" value={form.hasDrivingLicense} onChange={handleChange} className="input">
