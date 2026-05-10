@@ -1,107 +1,88 @@
-# Evergreen Berry Harvest
+ # Evergreen Recruitment Platform — Commercial Product
 
-Production-ready recruitment platform for a Finnish seasonal work company.
+ Evergreen is a production-ready recruitment product built for seasonal workforce hiring. This
+ repository contains the complete product (frontend + backend) that is ready to be sold, deployed,
+ and operated for a client. The project was developed to be shipped to a paying customer under a
+ commercial license.
 
-## Structure
+ IMPORTANT: This repository includes a `LICENSE` file that specifies that the Software remains the
+ property of the Owner until payment and a signed license agreement are executed. Do not assume any
+ rights to use this product unless you have a written license from the Owner.
 
-- `frontend/` — React + Vite + Tailwind landing site and application form
-- `backend/` — Node.js + Express API with MongoDB Atlas integration
+ Quick product summary
+ - Product name: Evergreen Recruitment Platform
+ - Purpose: Collect and manage seasonal worker applications (Finnish market-ready)
+ - Stack: React + Vite + Tailwind (frontend) • Node.js + Express + MongoDB (backend)
 
-## Features
+ Key selling points
+ - Turnkey applicant intake and admin dashboard for review and status updates
+ - Finnish phone/email validation, GDPR-ready privacy/terms pages
+ - Transactional confirmations via Brevo (configurable)
+ - Secure, production-ready middleware (helmet, rate limiting, sanitization)
+ - Easy deployment: frontend on Netlify (or any static host), backend on Render (or any Node host)
 
-- Modern Nordic-style responsive UI
-- Application form with frontend and backend validation
-- MongoDB applicant storage
-- Security middleware: `helmet`, `cors`, rate limiting, sanitization, XSS protection
-- GDPR-conscious privacy and terms pages
-- Deployment-ready for Netlify and Render
-- Scalable backend structure prepared for future authentication and email workflows
+ What you get (deliverables)
+ - Complete source code for frontend and backend (this repo)
+ - Admin portal for screening and status management
+ - Email confirmation integration and templating hooks
+ - Deployment configs and example `.env` templates for Render & Netlify
 
-## Environment Variables
+ Demo / Trial
+ - Run locally to demo the product to prospective buyers:
 
-Create the values from `.env.example` in the relevant project folder.
+ ```powershell
+ cd backend
+ npm install
+ npm run dev
+ # in another shell
+ cd frontend
+ npm install
+ npm run dev -- --host 0.0.0.0
+ # open: http://localhost:5173 (use /admin for the dashboard)
+ ```
 
-### Backend
+ Production deployment (recommended)
+ - Frontend: deploy `frontend/` to Netlify or similar. Set `VITE_API_BASE_URL` to the backend URL.
+ - Backend: deploy `backend/` as a Web Service on Render (or similar):
+	 - Root: `backend`
+	 - Build: `npm install`
+	 - Start: `node server.js`
+	 - Required env vars: `MONGO_URL`, `DB_NAME`, `CLIENT_URL`, `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, `BREVO_SENDER_NAME`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_JWT_SECRET`
 
-- `MONGO_URL`
-- `DB_NAME`
-- `PORT`
-- `CLIENT_URL`
-- `BREVO_API_KEY`
-- `BREVO_SENDER_EMAIL`
-- `BREVO_SENDER_NAME`
-- `ADMIN_USERNAME`
-- `ADMIN_PASSWORD`
-- `ADMIN_JWT_SECRET`
+ Licensing & Payment (important)
+ - This product is sold subject to a license and payment. See `LICENSE` for the Owner's
+	 reservation of rights until payment and a written license are completed.
+ - Suggested process for selling to a client:
+	 1. Provide a hosted demo (temporary credentials) and walkthrough.
+	 2. Issue a written proposal and invoice with payment terms and a due date.
+	 3. Upon receipt of full payment and execution of a license agreement, transfer or grant
+			the agreed license/rights to the client.
+ - If you require, we can supply a basic purchase-and-license contract template to present to the
+	 client; for enforceable contracts consult a lawyer.
 
-### Frontend
+ Pricing & support (example placeholders)
+ - One-time license fee: 600 €
+ - Optional support / maintenance: 50 € — includes updates, small feature tweaks, and monitoring
+ - Deployment assistance / onboarding: 50 €
 
-- `VITE_API_BASE_URL`
+ Admin & usage notes
+ - Admin portal: visit `/admin` and sign in with the configured single admin account (set via env vars)
+ - Page size and pagination are configurable; the backend supports large page sizes (up to 100)
 
-## Local Development
+ Security & secrets
+ - Never commit real secrets. Use the provided `.env.example` files and set secrets in Render/Netlify.
 
-### Backend
+ Next steps to sell this product
+ 1. Replace the placeholders below with your contact and pricing details.
+ 2. Prepare a short demo and proposal document for the prospective client.
+ 3. Use `LICENSE` and a written license/purchase agreement to capture the payment and grant rights.
 
-```bash
-cd backend
-npm install
-npm run dev
-```
+ Contact / Owner
+ - Owner: Seraj Shekh
+ - Email: contact@serajshekh.fi
 
-### Frontend
+ Legal note
+ - This README and the included `LICENSE` express the Owner's intent to retain ownership until
+	 payment and a written license are completed. This is not a substitute for a proper contract.
+	 For enforceable terms and jurisdiction-specific advice, consult a qualified attorney.
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-## Deployment
-
-- Frontend: deploy `frontend/` to Netlify
-- Backend: deploy `backend/` to Render
-- Set `CLIENT_URL` in the backend to your Netlify URL
-- Set `VITE_API_BASE_URL` in the frontend to your Render API URL
-- Add `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `ADMIN_JWT_SECRET` in Render for the backend
-
-### Brevo (Transactional Email)
-
-- In Render set the following environment variables for the backend service:
-	- `BREVO_API_KEY` — your Brevo API key (keep secret)
-	- `BREVO_SENDER_EMAIL` — the verified sender email in Brevo
-	- `BREVO_SENDER_NAME` — sender display name
-- Verify the sender email in your Brevo account before sending; otherwise deliveries will fail.
-
-### Backend deployment checklist
-
-- Ensure `backend/.env` is NOT committed — the repo's `.gitignore` already excludes `.env`.
-- Use `backend/.env.example` as a template for the required variables.
-- On Render set `MONGO_URL` (MongoDB Atlas), `DB_NAME`, `PORT` (optional), and `CLIENT_URL`.
-- Ensure the backend `start` script runs `node server.js` (already set in `package.json`).
-
-### Duplicate application prevention
-
-- The backend enforces a unique index on `email` and rejects duplicate applications with HTTP 409.
-- If a client tries to submit the same email twice, the API will return:
-
-```json
-{ "success": false, "message": "An application with this email address already exists" }
-```
-
-### Admin portal
-
-- Visit `/admin` to sign in with the single admin account.
-- The dashboard supports filtering by name, email, has car, driving license, and status.
-- Click any applicant row to view details and change the application status.
-- Recommended initial status flow: `pending` → `reviewed` → `selected` or `rejected`.
-
-### Final notes
-
-- Double-check environment variables are configured in the deployment provider UI and not stored in the repo.
-- After deployment, test submitting an application and confirm you receive the Brevo confirmation email.
-
-## Notes
-
-- Do not commit real secrets.
-- Use MongoDB Atlas connection strings only through environment variables.
-- The authentication and email layers are intentionally structured for future expansion.
