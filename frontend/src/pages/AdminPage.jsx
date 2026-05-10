@@ -23,6 +23,8 @@ const booleanOptions = [
   { value: 'false', label: 'No' },
 ];
 
+const pageSizeOptions = [20, 25];
+
 const statusClassName = {
   pending: 'bg-amber-50 text-amber-700 ring-amber-200',
   reviewed: 'bg-sky-50 text-sky-700 ring-sky-200',
@@ -47,8 +49,9 @@ export default function AdminPage() {
   const [error, setError] = useState('');
   const [loginError, setLoginError] = useState('');
   const [applicants, setApplicants] = useState([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1 });
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [selectedApplicant, setSelectedApplicant] = useState(null);
   const [selectedLoading, setSelectedLoading] = useState(false);
   const [selectedError, setSelectedError] = useState('');
@@ -57,12 +60,12 @@ export default function AdminPage() {
 
   const hasToken = useMemo(() => Boolean(getAdminToken()), []);
 
-  const loadApplicants = async (nextPage = 1, nextFilters = appliedFilters) => {
+  const loadApplicants = async (nextPage = 1, nextFilters = appliedFilters, nextLimit = pageSize) => {
     setLoading(true);
     setError('');
 
     try {
-      const response = await fetchApplicants({ ...nextFilters, page: nextPage, limit: 10, sortField: 'createdAt', sortDirection: 'desc' });
+      const response = await fetchApplicants({ ...nextFilters, page: nextPage, limit: nextLimit, sortField: 'createdAt', sortDirection: 'desc' });
       setApplicants(response.data.applicants || []);
       setPagination({
         page: response.data.page,
@@ -85,7 +88,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (hasToken) {
       setIsAuthenticated(true);
-      loadApplicants(1, defaultFilters);
+      loadApplicants(1, defaultFilters, pageSize);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasToken]);
@@ -99,7 +102,7 @@ export default function AdminPage() {
       await adminLogin(loginForm);
       setIsAuthenticated(true);
       setLoginForm(initialLogin);
-      await loadApplicants(1, defaultFilters);
+      await loadApplicants(1, defaultFilters, pageSize);
     } catch (loginErr) {
       setLoginError(loginErr.message || 'Login failed');
     } finally {
@@ -117,13 +120,19 @@ export default function AdminPage() {
   const handleApplyFilters = async event => {
     event.preventDefault();
     setAppliedFilters(filters);
-    await loadApplicants(1, filters);
+    await loadApplicants(1, filters, pageSize);
   };
 
   const handleResetFilters = async () => {
     setFilters(defaultFilters);
     setAppliedFilters(defaultFilters);
-    await loadApplicants(1, defaultFilters);
+    await loadApplicants(1, defaultFilters, pageSize);
+  };
+
+  const handlePageSizeChange = async event => {
+    const nextSize = Number(event.target.value);
+    setPageSize(nextSize);
+    await loadApplicants(1, appliedFilters, nextSize);
   };
 
   const openApplicantDetails = async applicant => {
@@ -203,6 +212,18 @@ export default function AdminPage() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-4 flex items-center justify-end gap-2 sm:gap-3">
+        <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm">
+          <span className="whitespace-nowrap">Rows</span>
+          <select
+            value={pageSize}
+            onChange={handlePageSizeChange}
+            className="bg-transparent text-sm font-semibold text-slate-700 outline-none"
+          >
+            {pageSizeOptions.map(option => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+        </label>
         <button type="button" onClick={() => loadApplicants(page, appliedFilters)} className="rounded-full border border-forest-200 px-3 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50 sm:px-4">
           Refresh
         </button>
@@ -253,7 +274,7 @@ export default function AdminPage() {
           <div className="flex items-center justify-between border-b border-forest-100 px-6 py-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Applications</h2>
-              <p className="text-sm text-slate-500">{pagination.total} total · Page {pagination.page} of {pagination.totalPages}</p>
+              <p className="text-sm text-slate-500">{pagination.total} total · Page {pagination.page} of {pagination.totalPages} · {pagination.limit} per page</p>
             </div>
           </div>
 
@@ -330,10 +351,10 @@ export default function AdminPage() {
               Showing {applicants.length ? (pagination.page - 1) * pagination.limit + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)}
             </span>
             <div className="flex gap-2">
-              <button type="button" disabled={pagination.page <= 1 || loading} onClick={() => loadApplicants(pagination.page - 1, appliedFilters)} className="rounded-full border border-slate-200 px-4 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-40">
+              <button type="button" disabled={pagination.page <= 1 || loading} onClick={() => loadApplicants(pagination.page - 1, appliedFilters, pageSize)} className="rounded-full border border-slate-200 px-4 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-40">
                 Previous
               </button>
-              <button type="button" disabled={pagination.page >= pagination.totalPages || loading} onClick={() => loadApplicants(pagination.page + 1, appliedFilters)} className="rounded-full border border-slate-200 px-4 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-40">
+              <button type="button" disabled={pagination.page >= pagination.totalPages || loading} onClick={() => loadApplicants(pagination.page + 1, appliedFilters, pageSize)} className="rounded-full border border-slate-200 px-4 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-40">
                 Next
               </button>
             </div>
