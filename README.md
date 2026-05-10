@@ -23,9 +23,16 @@ Create the values from `.env.example` in the relevant project folder.
 
 ### Backend
 
-- `MONGODB_URI`
+- `MONGO_URL`
+- `DB_NAME`
 - `PORT`
 - `CLIENT_URL`
+- `BREVO_API_KEY`
+- `BREVO_SENDER_EMAIL`
+- `BREVO_SENDER_NAME`
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD`
+- `ADMIN_JWT_SECRET`
 
 ### Frontend
 
@@ -55,6 +62,7 @@ npm run dev
 - Backend: deploy `backend/` to Render
 - Set `CLIENT_URL` in the backend to your Netlify URL
 - Set `VITE_API_BASE_URL` in the frontend to your Render API URL
+- Add `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `ADMIN_JWT_SECRET` in Render for the backend
 
 ### Brevo (Transactional Email)
 
@@ -79,6 +87,13 @@ npm run dev
 ```json
 { "success": false, "message": "An application with this email address already exists" }
 ```
+
+### Admin portal
+
+- Visit `/admin` to sign in with the single admin account.
+- The dashboard supports filtering by name, email, has car, driving license, and status.
+- Click any applicant row to view details and change the application status.
+- Recommended initial status flow: `pending` → `reviewed` → `selected` or `rejected`.
 
 ### Final notes
 

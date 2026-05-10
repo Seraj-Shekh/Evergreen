@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const applicantSchema = new mongoose.Schema(
   {
     fullName: { type: String, required: true, trim: true, maxlength: 120 },
-    email: { type: String, required: true, trim: true, lowercase: true, maxlength: 254, unique: true },
+    email: { type: String, required: true, trim: true, lowercase: true, maxlength: 254 },
     phoneNumber: { type: String, required: true, trim: true, maxlength: 32 },
     hasDrivingLicense: { type: Boolean, required: true },
     hasOwnCar: { type: Boolean, required: true },

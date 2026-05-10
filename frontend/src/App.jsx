@@ -5,6 +5,7 @@ import ApplicationPage from './pages/ApplicationPage.jsx';
 import PrivacyPage from './pages/PrivacyPage.jsx';
 import TermsPage from './pages/TermsPage.jsx';
 import SuccessPage from './pages/SuccessPage.jsx';
+import AdminPage from './pages/AdminPage.jsx';
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
         <Route path="/apply" element={<ApplicationPage />} />
         <Route path="/privacy-policy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
+        <Route path="/admin" element={<AdminPage />} />
         <Route path="/success" element={<SuccessPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
