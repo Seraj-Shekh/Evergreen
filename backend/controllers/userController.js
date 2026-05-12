@@ -73,6 +73,8 @@ export const getCurrentUser = async (req, res, next) => {
           id: applicant._id,
           status: applicant.status,
           submittedAt: applicant.createdAt,
+          phoneNumber: applicant.phoneNumber,
+          groupId: applicant.groupId || '',
         } : null,
       },
     });
@@ -111,6 +113,43 @@ export const changePassword = async (req, res, next) => {
     await user.save();
 
     return res.json({ success: true, message: 'Password updated' });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const updatePhoneNumber = async (req, res, next) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const phoneNumber = String(req.body.phoneNumber || '').trim();
+
+    const user = await UserAccount.findById(userId).lean();
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const applicant = await Applicant.findById(user.applicantId);
+
+    if (!applicant) {
+      return res.status(404).json({ success: false, message: 'Applicant not found' });
+    }
+
+    applicant.phoneNumber = phoneNumber;
+    await applicant.save();
+
+    return res.json({
+      success: true,
+      message: 'Phone number updated',
+      data: {
+        phoneNumber: applicant.phoneNumber,
+      },
+    });
   } catch (error) {
     return next(error);
   }

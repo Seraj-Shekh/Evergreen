@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import { validateRequest } from '../middleware/validateRequest.js';
-import { loginUser, getCurrentUser, changePassword } from '../controllers/userController.js';
+import { loginUser, getCurrentUser, changePassword, updatePhoneNumber } from '../controllers/userController.js';
 import { requireUserAuth } from '../middleware/userAuth.js';
 
 const router = Router();
@@ -19,6 +19,13 @@ router.post(
 router.use(requireUserAuth);
 
 router.get('/me', getCurrentUser);
+
+router.patch(
+  '/profile',
+  [body('phoneNumber').trim().notEmpty().withMessage('Phone number is required')],
+  validateRequest,
+  updatePhoneNumber
+);
 
 router.post(
   '/change-password',

@@ -102,3 +102,10 @@ export const changeUserPassword = async (currentPassword, newPassword) =>
     body: JSON.stringify({ currentPassword, newPassword }),
   });
 
+export const updateUserPhone = async phoneNumber =>
+  request('/api/users/profile', {
+    method: 'PATCH',
+    headers: jsonHeaders(getUserToken()),
+    body: JSON.stringify({ phoneNumber }),
+  });
+

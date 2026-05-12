@@ -5,34 +5,45 @@ const linkClass = ({ isActive }) =>
 
 export default function Layout() {
   const location = useLocation();
-  const isAdminRoute = location.pathname.startsWith('/admin') || location.pathname.startsWith('/portal');
+  const isPortalRoute = location.pathname.startsWith('/portal');
+  const isAdminRoute = location.pathname.startsWith('/admin') || isPortalRoute;
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
-      <header className={isAdminRoute ? 'sticky top-0 z-50 bg-white/90' : 'sticky top-0 z-50 border-b border-forest-100 bg-white/90 backdrop-blur'}>
-        <div className={isAdminRoute ? 'mx-auto flex max-w-7xl items-center justify-center px-4 py-4 sm:px-6 lg:px-8' : 'mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8'}>
-          <Link to="/" className={isAdminRoute ? 'flex items-center gap-3 font-semibold tracking-tight text-forest-900' : 'flex items-center gap-3 font-semibold tracking-tight text-forest-900'}>
-            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-forest-600 text-white shadow-soft">EB</div>
-            {!isAdminRoute && <span>Evergreen Berry Harvest</span>}
-          </Link>
-          {!isAdminRoute && (
-            <>
-              <nav className="hidden items-center gap-6 md:flex">
-                <NavLink to="/" className={linkClass} end>Home</NavLink>
-                <NavLink to="/apply" className={linkClass}>Apply</NavLink>
-                <NavLink to="/privacy-policy" className={linkClass}>Privacy</NavLink>
-                <NavLink to="/terms" className={linkClass}>Terms</NavLink>
-              </nav>
-              <Link
-                to="/apply"
-                className="rounded-full bg-forest-700 px-5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-forest-800"
-              >
-                Apply Now
-              </Link>
-            </>
-          )}
-        </div>
-      </header>
+      {!isPortalRoute && (
+        <header className={isAdminRoute ? 'sticky top-0 z-50 bg-white/90' : 'sticky top-0 z-50 border-b border-forest-100 bg-white/90 backdrop-blur'}>
+          <div className={isAdminRoute ? 'mx-auto flex max-w-7xl items-center justify-center px-4 py-4 sm:px-6 lg:px-8' : 'mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8'}>
+            <Link to="/" className={isAdminRoute ? 'flex items-center gap-3 font-semibold tracking-tight text-forest-900' : 'flex items-center gap-3 font-semibold tracking-tight text-forest-900'}>
+              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-forest-600 text-white shadow-soft">EB</div>
+              {!isAdminRoute && <span>Evergreen Berry Harvest</span>}
+            </Link>
+            {!isAdminRoute && (
+              <>
+                <nav className="hidden items-center gap-6 md:flex">
+                  <NavLink to="/" className={linkClass} end>Home</NavLink>
+                  <NavLink to="/apply" className={linkClass}>Apply</NavLink>
+                  <NavLink to="/privacy-policy" className={linkClass}>Privacy</NavLink>
+                  <NavLink to="/terms" className={linkClass}>Terms</NavLink>
+                </nav>
+                <div className="flex items-center gap-3">
+                  <Link
+                    to="/portal"
+                    className="rounded-full border border-forest-200 px-4 py-2 text-xs font-semibold text-forest-700 transition hover:border-forest-300 hover:text-forest-800"
+                  >
+                    Login
+                  </Link>
+                  <Link
+                    to="/apply"
+                    className="rounded-full bg-forest-700 px-5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-forest-800"
+                  >
+                    Apply Now
+                  </Link>
+                </div>
+              </>
+            )}
+          </div>
+        </header>
+      )}
       <main>
         <Outlet />
       </main>

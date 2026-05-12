@@ -18,6 +18,7 @@ export default function App() {
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/portal" element={<UserPortalPage />} />
+        <Route path="/portal/:section" element={<UserPortalPage />} />
         <Route path="/success" element={<SuccessPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
