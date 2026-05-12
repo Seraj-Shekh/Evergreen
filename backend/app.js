@@ -7,6 +7,7 @@ import hpp from 'hpp';
 import dotenv from 'dotenv';
 import applicationRoutes from './routes/applicationRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
+import userRoutes from './routes/userRoutes.js';
 import healthRoutes from './routes/healthRoutes.js';
 import sanitizeRequest from './middleware/sanitizeRequest.js';
 import { notFound } from './middleware/notFound.js';
@@ -47,6 +48,7 @@ app.use('/api', apiLimiter);
 app.use('/', healthRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/users', userRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

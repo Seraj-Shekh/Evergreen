@@ -5,7 +5,7 @@ const linkClass = ({ isActive }) =>
 
 export default function Layout() {
   const location = useLocation();
-  const isAdminRoute = location.pathname.startsWith('/admin');
+  const isAdminRoute = location.pathname.startsWith('/admin') || location.pathname.startsWith('/portal');
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
