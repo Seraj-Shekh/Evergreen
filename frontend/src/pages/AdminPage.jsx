@@ -1,9 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
-import { adminLogin, clearAdminToken, fetchApplicant, fetchApplicants, getAdminToken, updateApplicantStatus } from '../lib/api.js';
+import { Link } from 'react-router-dom';
+import PasswordField from '../components/PasswordField.jsx';
+import {
+  addAdminIncomeRecord,
+  adminLogin,
+  clearAdminToken,
+  createUserAccounts,
+  fetchAdminIncomeRecords,
+  fetchApplicant,
+  fetchApplicants,
+  getAdminToken,
+  updateApplicantStatus,
+} from '../lib/api.js';
 
 const defaultFilters = {
   name: '',
   email: '',
+  pickerId: '',
+  groupName: '',
   hasOwnCar: '',
   hasDrivingLicense: '',
   status: '',
@@ -25,6 +39,8 @@ const booleanOptions = [
 
 const pageSizeOptions = [20, 25];
 
+const today = new Date().toISOString().slice(0, 10);
+
 const statusClassName = {
   pending: 'bg-amber-50 text-amber-700 ring-amber-200',
   reviewed: 'bg-sky-50 text-sky-700 ring-sky-200',
@@ -37,6 +53,11 @@ const formatDate = value => new Intl.DateTimeFormat('en-GB', {
   timeStyle: 'short',
   timeZone: 'Europe/Helsinki',
 }).format(new Date(value));
+
+const formatNumber = value => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed.toFixed(2) : String(value || '0');
+};
 
 const initialLogin = { username: '', password: '' };
 
@@ -57,8 +78,23 @@ export default function AdminPage() {
   const [selectedError, setSelectedError] = useState('');
   const [statusSaving, setStatusSaving] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAdminToken()));
+  const [selectedApplicantIds, setSelectedApplicantIds] = useState([]);
+  const [selectedApplicantLookup, setSelectedApplicantLookup] = useState({});
+  const [groupAccountForm, setGroupAccountForm] = useState({ groupName: '' });
+  const [groupAccountLoading, setGroupAccountLoading] = useState(false);
+  const [groupAccountError, setGroupAccountError] = useState('');
+  const [groupAccountSuccess, setGroupAccountSuccess] = useState('');
+  const [incomeForm, setIncomeForm] = useState({ applicantId: '', date: today, location: '', berryType: '', berryWeightKg: '', carrotWeightKg: '', amount: '' });
+  const [incomeSaving, setIncomeSaving] = useState(false);
+  const [incomeError, setIncomeError] = useState('');
+  const [incomeSuccess, setIncomeSuccess] = useState('');
+  const [incomeRecords, setIncomeRecords] = useState([]);
 
   const hasToken = useMemo(() => Boolean(getAdminToken()), []);
+
+  const selectedApplicantNames = useMemo(() => {
+    return selectedApplicantIds.map(id => selectedApplicantLookup[id]).filter(Boolean);
+  }, [selectedApplicantIds, selectedApplicantLookup]);
 
   const loadApplicants = async (nextPage = 1, nextFilters = appliedFilters, nextLimit = pageSize) => {
     setLoading(true);
@@ -66,7 +102,16 @@ export default function AdminPage() {
 
     try {
       const response = await fetchApplicants({ ...nextFilters, page: nextPage, limit: nextLimit, sortField: 'createdAt', sortDirection: 'desc' });
-      setApplicants(response.data.applicants || []);
+      const nextApplicants = response.data.applicants || [];
+
+      setApplicants(nextApplicants);
+      setSelectedApplicantLookup(current => {
+        const nextLookup = { ...current };
+        nextApplicants.forEach(applicant => {
+          nextLookup[applicant._id] = applicant.fullName;
+        });
+        return nextLookup;
+      });
       setPagination({
         page: response.data.page,
         limit: response.data.limit,
@@ -93,6 +138,25 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasToken]);
 
+  useEffect(() => {
+    if (selectedApplicant?._id) {
+      setIncomeForm(current => ({ ...current, applicantId: selectedApplicant._id }));
+    }
+  }, [selectedApplicant]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      (async () => {
+        try {
+          const response = await fetchAdminIncomeRecords({ limit: 10, page: 1 });
+          setIncomeRecords(response.data.records || []);
+        } catch {
+          setIncomeRecords([]);
+        }
+      })();
+    }
+  }, [isAuthenticated]);
+
   const handleLoginSubmit = async event => {
     event.preventDefault();
     setLoginLoading(true);
@@ -115,6 +179,8 @@ export default function AdminPage() {
     setIsAuthenticated(false);
     setApplicants([]);
     setSelectedApplicant(null);
+    setSelectedApplicantIds([]);
+    setSelectedApplicantLookup({});
   };
 
   const handleApplyFilters = async event => {
@@ -127,6 +193,74 @@ export default function AdminPage() {
     setFilters(defaultFilters);
     setAppliedFilters(defaultFilters);
     await loadApplicants(1, defaultFilters, pageSize);
+  };
+
+  const toggleApplicantSelection = applicantId => {
+    setSelectedApplicantIds(current => (
+      current.includes(applicantId)
+        ? current.filter(id => id !== applicantId)
+        : [...current, applicantId]
+    ));
+  };
+
+  const handleCreateGroupAccounts = async event => {
+    event.preventDefault();
+    setGroupAccountError('');
+    setGroupAccountSuccess('');
+
+    if (!groupAccountForm.groupName.trim()) {
+      setGroupAccountError('Group name is required');
+      return;
+    }
+
+    if (selectedApplicantIds.length === 0) {
+      setGroupAccountError('Select at least one applicant');
+      return;
+    }
+
+    setGroupAccountLoading(true);
+
+    try {
+      const groupAssignments = Object.fromEntries(selectedApplicantIds.map(id => [id, groupAccountForm.groupName.trim()]));
+      const response = await createUserAccounts({ applicantIds: selectedApplicantIds, groupAssignments });
+      const createdCount = response.data.created?.length || 0;
+      const updatedCount = response.data.updated?.length || 0;
+      setGroupAccountSuccess(`Created ${createdCount} and updated ${updatedCount} account(s).`);
+      setGroupAccountForm({ groupName: '' });
+      setSelectedApplicantIds([]);
+      await loadApplicants(pagination.page, appliedFilters, pageSize);
+    } catch (createError) {
+      setGroupAccountError(createError.message || 'Failed to create accounts');
+    } finally {
+      setGroupAccountLoading(false);
+    }
+  };
+
+  const handleIncomeSubmit = async event => {
+    event.preventDefault();
+    setIncomeError('');
+    setIncomeSuccess('');
+
+    if (!incomeForm.applicantId) {
+      setIncomeError('Select an applicant');
+      return;
+    }
+
+    setIncomeSaving(true);
+
+    try {
+      const response = await addAdminIncomeRecord(incomeForm);
+      const savedRecord = response.data?.incomeRecord;
+      if (savedRecord) {
+        setIncomeRecords(current => [savedRecord, ...current.filter(item => item._id !== savedRecord._id)]);
+      }
+      setIncomeSuccess(`Income saved. Calculated income: ${savedRecord?.calculatedIncome ?? '0'}`);
+      setIncomeForm(current => ({ ...current, location: '', berryType: '', berryWeightKg: '', carrotWeightKg: '', amount: '' }));
+    } catch (incomeSaveError) {
+      setIncomeError(incomeSaveError.message || 'Failed to save income record');
+    } finally {
+      setIncomeSaving(false);
+    }
   };
 
   const handlePageSizeChange = async event => {
@@ -184,17 +318,14 @@ export default function AdminPage() {
                 required
               />
             </label>
-            <label className="block text-sm font-medium text-slate-700 text-left">
-              Password
-              <input
-                className="input mt-2"
-                type="password"
-                value={loginForm.password}
-                onChange={event => setLoginForm(current => ({ ...current, password: event.target.value }))}
-                autoComplete="current-password"
-                required
-              />
-            </label>
+            <PasswordField
+              label="Password"
+              value={loginForm.password}
+              onChange={event => setLoginForm(current => ({ ...current, password: event.target.value }))}
+              autoComplete="current-password"
+              required
+              labelClassName="block text-sm font-medium text-slate-700 text-left"
+            />
             {loginError ? <p className="text-sm text-rose-600 text-left">{loginError}</p> : null}
             <button
               type="submit"
@@ -212,6 +343,9 @@ export default function AdminPage() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-4 flex items-center justify-end gap-2 sm:gap-3">
+        <Link to="/admin/income" className="rounded-full border border-forest-200 px-3 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50 sm:px-4">
+          Income manager
+        </Link>
         <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm">
           <span className="whitespace-nowrap">Rows</span>
           <select
@@ -240,6 +374,14 @@ export default function AdminPage() {
         <label className="text-sm font-medium text-slate-700 sm:col-span-1 xl:col-span-1">
           Email
           <input className="input mt-2" value={filters.email} onChange={event => setFilters(current => ({ ...current, email: event.target.value }))} placeholder="Search email" />
+        </label>
+        <label className="text-sm font-medium text-slate-700 sm:col-span-1 xl:col-span-1">
+          Picker ID
+          <input className="input mt-2" value={filters.pickerId} onChange={event => setFilters(current => ({ ...current, pickerId: event.target.value }))} placeholder="Search picker ID" />
+        </label>
+        <label className="text-sm font-medium text-slate-700 sm:col-span-1 xl:col-span-1">
+          Group name
+          <input className="input mt-2" value={filters.groupName} onChange={event => setFilters(current => ({ ...current, groupName: event.target.value }))} placeholder="Search group" />
         </label>
         <label className="text-sm font-medium text-slate-700 sm:col-span-1 xl:col-span-1">
           Has car
@@ -315,8 +457,11 @@ export default function AdminPage() {
                 <table className="min-w-full divide-y divide-forest-100 text-left text-sm">
                   <thead className="bg-forest-50/60 text-xs uppercase tracking-wide text-slate-500">
                     <tr>
+                      <th className="px-6 py-3 font-semibold">Select</th>
                       <th className="px-6 py-3 font-semibold">Name</th>
                       <th className="px-6 py-3 font-semibold">Email</th>
+                      <th className="px-6 py-3 font-semibold">Picker ID</th>
+                      <th className="px-6 py-3 font-semibold">Group</th>
                       <th className="px-6 py-3 font-semibold">Phone</th>
                       <th className="px-6 py-3 font-semibold">Car</th>
                       <th className="px-6 py-3 font-semibold">License</th>
@@ -327,8 +472,19 @@ export default function AdminPage() {
                   <tbody className="divide-y divide-forest-50 bg-white">
                     {applicants.map(applicant => (
                       <tr key={applicant._id} className="cursor-pointer hover:bg-forest-50/40" onClick={() => openApplicantDetails(applicant)}>
+                        <td className="px-6 py-4" onClick={event => event.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedApplicantIds.includes(applicant._id)}
+                            onChange={() => toggleApplicantSelection(applicant._id)}
+                            aria-label={`Select ${applicant.fullName}`}
+                            className="h-4 w-4 rounded border-slate-300 text-forest-700 focus:ring-forest-600"
+                          />
+                        </td>
                         <td className="px-6 py-4 font-medium text-slate-900">{applicant.fullName}</td>
                         <td className="px-6 py-4 text-slate-600">{applicant.email}</td>
+                        <td className="px-6 py-4 text-slate-600">{applicant.pickerId || '—'}</td>
+                        <td className="px-6 py-4 text-slate-600">{applicant.groupName || '—'}</td>
                         <td className="px-6 py-4 text-slate-600">{applicant.phoneNumber}</td>
                         <td className="px-6 py-4 text-slate-600">{applicant.hasOwnCar ? 'Yes' : 'No'}</td>
                         <td className="px-6 py-4 text-slate-600">{applicant.hasDrivingLicense ? 'Yes' : 'No'}</td>
@@ -377,6 +533,24 @@ export default function AdminPage() {
                 <a className="font-semibold text-forest-700" href={`mailto:${selectedApplicant.email}`}>{selectedApplicant.email}</a>
               </div>
               <div>
+                <p className="text-sm text-slate-500">Picker ID</p>
+                <p className="font-semibold text-slate-900">{selectedApplicant.pickerId || '—'}</p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-500">Group</p>
+                <p className="font-semibold text-slate-900">{selectedApplicant.groupName || '—'}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-forest-50 p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Bank name</p>
+                  <p className="mt-1 font-semibold text-slate-900">{selectedApplicant.bankName || '—'}</p>
+                </div>
+                <div className="rounded-2xl bg-forest-50 p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Bank account</p>
+                  <p className="mt-1 font-semibold text-slate-900 break-all">{selectedApplicant.bankAccountNumber || '—'}</p>
+                </div>
+              </div>
+              <div>
                 <p className="text-sm text-slate-500">Phone</p>
                 <a className="font-semibold text-forest-700" href={`tel:${selectedApplicant.phoneNumber}`}>{selectedApplicant.phoneNumber}</a>
               </div>
@@ -408,6 +582,35 @@ export default function AdminPage() {
                 <p className="text-sm text-slate-500">Additional description</p>
                 <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{selectedApplicant.additionalDescription || '—'}</p>
               </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-slate-500">Income total</p>
+                    <p className="font-semibold text-slate-900">{formatNumber(selectedApplicant.totalIncome || 0)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-slate-500">Records</p>
+                    <p className="font-semibold text-slate-900">{selectedApplicant.incomeRecords?.length || 0}</p>
+                  </div>
+                </div>
+                <div className="mt-4 max-h-72 space-y-3 overflow-y-auto pr-1">
+                  {selectedApplicant.incomeRecords?.length > 0 ? selectedApplicant.incomeRecords.map(record => (
+                    <div key={record._id} className="rounded-xl bg-slate-50 p-3 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-semibold text-slate-900">{record.date ? formatDate(record.date) : '—'}</p>
+                        <p className="font-semibold text-emerald-700">{formatNumber(record.calculatedIncome)}</p>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600 sm:grid-cols-3">
+                        <p><span className="font-medium text-slate-800">Location:</span> {record.location || '—'}</p>
+                        <p><span className="font-medium text-slate-800">Berry:</span> {record.berryType || '—'}</p>
+                        <p><span className="font-medium text-slate-800">Price:</span> {formatNumber(record.amount)}</p>
+                        <p><span className="font-medium text-slate-800">Berry wt:</span> {formatNumber(record.berryWeightKg)}</p>
+                        <p><span className="font-medium text-slate-800">Cart wt:</span> {formatNumber(record.carrotWeightKg)}</p>
+                      </div>
+                    </div>
+                  )) : <p className="text-sm text-slate-500">No income records found for this person.</p>}
+                </div>
+              </div>
               <div>
                 <p className="text-sm text-slate-500">Update status</p>
                 <div className="mt-2 grid grid-cols-2 gap-2">
@@ -428,6 +631,145 @@ export default function AdminPage() {
           ) : (
             <p className="mt-4 text-sm leading-6 text-slate-600">Select an applicant from the table to view full details and update their status.</p>
           )}
+
+          <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Create group accounts</h3>
+            <p className="mt-1 text-xs text-slate-500">Pick applicants from the table, give the group a name, and create login accounts.</p>
+            <p className="mt-2 text-xs text-slate-600">Selected: {selectedApplicantIds.length}{selectedApplicantNames.length ? ` (${selectedApplicantNames.join(', ')})` : ''}</p>
+            <form className="mt-3 space-y-3" onSubmit={handleCreateGroupAccounts}>
+              <label className="block text-xs font-medium text-slate-700">
+                Group name
+                <input
+                  className="input mt-2"
+                  value={groupAccountForm.groupName}
+                  onChange={event => setGroupAccountForm({ groupName: event.target.value })}
+                  placeholder="group1"
+                />
+              </label>
+              {groupAccountError ? <p className="text-xs text-rose-600">{groupAccountError}</p> : null}
+              {groupAccountSuccess ? <p className="text-xs text-emerald-600">{groupAccountSuccess}</p> : null}
+              <button
+                type="submit"
+                disabled={groupAccountLoading}
+                className="w-full rounded-full bg-forest-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-forest-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {groupAccountLoading ? 'Creating…' : 'Create accounts'}
+              </button>
+            </form>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Add income record</h3>
+            <p className="mt-1 text-xs text-slate-500">Set berry wt, carrot wt, and berry price for one applicant.</p>
+            <form className="mt-3 space-y-3" onSubmit={handleIncomeSubmit}>
+              <label className="block text-xs font-medium text-slate-700">
+                Applicant
+                <select
+                  className="input mt-2"
+                  value={incomeForm.applicantId}
+                  onChange={event => setIncomeForm(current => ({ ...current, applicantId: event.target.value }))}
+                >
+                  <option value="">Select applicant</option>
+                  {applicants.map(applicant => (
+                    <option key={applicant._id} value={applicant._id}>
+                      {applicant.fullName}{applicant.groupName ? ` (${applicant.groupName})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs font-medium text-slate-700">
+                Location
+                <input
+                  className="input mt-2"
+                  value={incomeForm.location}
+                  onChange={event => setIncomeForm(current => ({ ...current, location: event.target.value }))}
+                  placeholder="Field A / Oulu north"
+                />
+              </label>
+              <label className="block text-xs font-medium text-slate-700">
+                Berry type
+                <input
+                  className="input mt-2"
+                  value={incomeForm.berryType}
+                  onChange={event => setIncomeForm(current => ({ ...current, berryType: event.target.value }))}
+                  placeholder="Cow berry"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-xs font-medium text-slate-700">
+                  Date
+                  <input
+                    className="input mt-2"
+                    type="date"
+                    value={incomeForm.date}
+                    onChange={event => setIncomeForm(current => ({ ...current, date: event.target.value }))}
+                  />
+                </label>
+                <label className="block text-xs font-medium text-slate-700">
+                  Berry price / kg
+                  <input
+                    className="input mt-2"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={incomeForm.amount}
+                    onChange={event => setIncomeForm(current => ({ ...current, amount: event.target.value }))}
+                    placeholder="5"
+                  />
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-xs font-medium text-slate-700">
+                  Berry wt (kg)
+                  <input
+                    className="input mt-2"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={incomeForm.berryWeightKg}
+                    onChange={event => setIncomeForm(current => ({ ...current, berryWeightKg: event.target.value }))}
+                    placeholder="0"
+                  />
+                </label>
+                <label className="block text-xs font-medium text-slate-700">
+                  Cart wt (kg)
+                  <input
+                    className="input mt-2"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={incomeForm.carrotWeightKg}
+                    onChange={event => setIncomeForm(current => ({ ...current, carrotWeightKg: event.target.value }))}
+                    placeholder="0"
+                  />
+                </label>
+              </div>
+              {incomeError ? <p className="text-xs text-rose-600">{incomeError}</p> : null}
+              {incomeSuccess ? <p className="text-xs text-emerald-600">{incomeSuccess}</p> : null}
+              <button
+                type="submit"
+                disabled={incomeSaving}
+                className="w-full rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {incomeSaving ? 'Saving…' : 'Save income record'}
+              </button>
+            </form>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Recent income entries</h3>
+            <div className="mt-3 space-y-2">
+              {incomeRecords.length > 0 ? incomeRecords.map(record => (
+                <div key={record._id} className="rounded-xl bg-white px-3 py-2 text-xs text-slate-600 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium text-slate-900">{record.applicantId}</span>
+                    <span className="text-emerald-700">{record.calculatedIncome}</span>
+                  </div>
+                  <p className="mt-1">{record.date ? formatDate(record.date) : '—'}</p>
+                </div>
+              )) : <p className="text-xs text-slate-500">No recent income records loaded.</p>}
+            </div>
+          </div>
         </aside>
       </div>
     </section>

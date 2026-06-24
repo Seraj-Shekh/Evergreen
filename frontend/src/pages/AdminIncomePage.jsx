@@ -1,0 +1,363 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import PasswordField from '../components/PasswordField.jsx';
+import {
+  adminLogin,
+  clearAdminToken,
+  fetchApplicant,
+  fetchApplicants,
+  getAdminToken,
+} from '../lib/api.js';
+
+const loginInitial = { username: '', password: '' };
+const searchInitial = { pickerId: '' };
+
+const formatDate = value => new Intl.DateTimeFormat('en-GB', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: 'Europe/Helsinki',
+}).format(new Date(value));
+
+const formatNumber = value => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed.toFixed(2) : String(value || '0');
+};
+
+export default function AdminIncomePage() {
+  const navigate = useNavigate();
+  const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAdminToken()));
+  const [loginForm, setLoginForm] = useState(loginInitial);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [searchForm, setSearchForm] = useState(searchInitial);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [applicants, setApplicants] = useState([]);
+  const [selectedApplicant, setSelectedApplicant] = useState(null);
+  const [selectedLoading, setSelectedLoading] = useState(false);
+  const [selectedError, setSelectedError] = useState('');
+
+  const totalIncome = useMemo(() => Number(selectedApplicant?.totalIncome || 0), [selectedApplicant]);
+  const incomeRecords = selectedApplicant?.incomeRecords || [];
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setApplicants([]);
+      setSelectedApplicant(null);
+      setSearchQuery('');
+      setSearchForm(searchInitial);
+    }
+  }, [isAuthenticated]);
+
+  const handleLoginSubmit = async event => {
+    event.preventDefault();
+    setLoginLoading(true);
+    setLoginError('');
+
+    try {
+      await adminLogin(loginForm);
+      setIsAuthenticated(true);
+      setLoginForm(loginInitial);
+    } catch (error) {
+      setLoginError(error.message || 'Login failed');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    clearAdminToken();
+    setIsAuthenticated(false);
+    setApplicants([]);
+    setSelectedApplicant(null);
+    setSelectedError('');
+    setSearchError('');
+  };
+
+  const loadIncomeApplicants = async pickerId => {
+    const nextPickerId = String(pickerId || '').trim();
+    setSearchQuery(nextPickerId);
+    setSearchLoading(true);
+    setSearchError('');
+    setSelectedError('');
+
+    try {
+      const response = await fetchApplicants({ pickerId: nextPickerId, limit: 50, page: 1, sortField: 'createdAt', sortDirection: 'desc' });
+      const nextApplicants = response.data.applicants || [];
+      setApplicants(nextApplicants);
+      if (nextApplicants.length === 1) {
+        await openApplicant(nextApplicants[0]);
+      } else {
+        setSelectedApplicant(null);
+      }
+    } catch (error) {
+      setApplicants([]);
+      setSearchError(error.message || 'Failed to search picker ID');
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleSearchSubmit = async event => {
+    event.preventDefault();
+    if (!searchForm.pickerId.trim()) {
+      setSearchError('Enter a picker ID to search');
+      return;
+    }
+
+    await loadIncomeApplicants(searchForm.pickerId);
+  };
+
+  const clearSearch = () => {
+    setSearchForm(searchInitial);
+    setSearchQuery('');
+    setApplicants([]);
+    setSelectedApplicant(null);
+    setSearchError('');
+    setSelectedError('');
+  };
+
+  const openApplicant = async applicant => {
+    setSelectedLoading(true);
+    setSelectedError('');
+
+    try {
+      const response = await fetchApplicant(applicant._id);
+      setSelectedApplicant(response.data.applicant);
+    } catch (error) {
+      setSelectedError(error.message || 'Failed to load income detail');
+    } finally {
+      setSelectedLoading(false);
+    }
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <section className="mx-auto flex min-h-[70vh] max-w-7xl items-center px-4 py-16 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-md rounded-3xl border border-forest-100 bg-white p-8 text-center shadow-soft">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-forest-600 text-white">EB</div>
+          <h1 className="text-xl font-semibold text-slate-900">Income management</h1>
+          <p className="mt-2 text-sm text-slate-600">Sign in to search a picker ID and review income history before payout.</p>
+          <form className="mt-6 space-y-4 text-left" onSubmit={handleLoginSubmit}>
+            <label className="block text-sm font-medium text-slate-700">
+              Username
+              <input
+                className="input mt-2"
+                value={loginForm.username}
+                onChange={event => setLoginForm(current => ({ ...current, username: event.target.value }))}
+                autoComplete="username"
+                required
+              />
+            </label>
+            <PasswordField
+              label="Password"
+              value={loginForm.password}
+              onChange={event => setLoginForm(current => ({ ...current, password: event.target.value }))}
+              autoComplete="current-password"
+              required
+              labelClassName="block text-sm font-medium text-slate-700"
+            />
+            {loginError ? <p className="text-sm text-rose-600">{loginError}</p> : null}
+            <button
+              type="submit"
+              disabled={loginLoading}
+              className="w-full rounded-full bg-forest-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-forest-800 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {loginLoading ? 'Signing in…' : 'Sign in'}
+            </button>
+          </form>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mb-5 flex flex-col gap-3 rounded-3xl border border-forest-100 bg-white p-5 shadow-soft sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate('/admin')}
+              className="rounded-full border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Back to admin
+            </button>
+            <span className="rounded-full bg-forest-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-forest-700">Income manager</span>
+          </div>
+          <h1 className="mt-3 text-2xl font-semibold text-slate-900">Income details by picker ID</h1>
+          <p className="mt-1 text-sm text-slate-600">Search a picker ID, open the person’s record, and review the full payout history in one place.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            Logout
+          </button>
+          <Link
+            to="/admin"
+            className="rounded-full border border-forest-200 px-4 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50"
+          >
+            Applicant admin
+          </Link>
+        </div>
+      </div>
+
+      <form onSubmit={handleSearchSubmit} className="rounded-3xl border border-forest-100 bg-white p-5 shadow-soft">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <label className="block flex-1 text-sm font-medium text-slate-700">
+            Picker ID
+            <input
+              className="input mt-2"
+              value={searchForm.pickerId}
+              onChange={event => setSearchForm({ pickerId: event.target.value })}
+              placeholder="P-0001"
+            />
+          </label>
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={searchLoading}
+              className="rounded-full bg-forest-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-forest-800 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {searchLoading ? 'Searching…' : 'Search'}
+            </button>
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+        {searchError ? <p className="mt-3 text-sm text-rose-600">{searchError}</p> : null}
+        {searchQuery ? <p className="mt-3 text-xs text-slate-500">Showing results for picker ID: {searchQuery}</p> : null}
+      </form>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+        <div className="rounded-3xl border border-forest-100 bg-white p-5 shadow-soft">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Matching users</h2>
+              <p className="text-sm text-slate-500">Click a user to see the full income table.</p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{applicants.length}</span>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {applicants.length > 0 ? applicants.map(applicant => (
+              <button
+                key={applicant._id}
+                type="button"
+                onClick={() => openApplicant(applicant)}
+                className={`w-full rounded-2xl border p-4 text-left transition hover:shadow-sm ${selectedApplicant?._id === applicant._id ? 'border-forest-300 bg-forest-50' : 'border-slate-200 bg-white'}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-900">{applicant.fullName}</p>
+                    <p className="mt-1 text-sm text-slate-500">{applicant.email}</p>
+                    <p className="mt-1 text-sm text-slate-600">Picker ID: {applicant.pickerId || '—'}</p>
+                    <p className="mt-1 text-sm text-slate-600">Group: {applicant.groupName || '—'}</p>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">View</span>
+                </div>
+              </button>
+            )) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                Search by picker ID to load matching users.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-forest-100 bg-white p-5 shadow-soft">
+          <div className="flex flex-col gap-2 border-b border-forest-100 pb-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Payout detail</h2>
+              <p className="text-sm text-slate-500">Bank details and tabular income history for the selected user.</p>
+            </div>
+            {selectedApplicant ? (
+              <div className="text-right">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Current total</p>
+                <p className="text-lg font-semibold text-emerald-700">{formatNumber(totalIncome)}</p>
+              </div>
+            ) : null}
+          </div>
+
+          {selectedLoading ? <p className="mt-5 text-sm text-slate-600">Loading detail…</p> : null}
+          {selectedError ? <p className="mt-5 text-sm text-rose-600">{selectedError}</p> : null}
+
+          {selectedApplicant ? (
+            <div className="mt-5 space-y-5">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl bg-forest-50 p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Name</p>
+                  <p className="mt-1 font-semibold text-slate-900">{selectedApplicant.fullName}</p>
+                </div>
+                <div className="rounded-2xl bg-forest-50 p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Picker ID</p>
+                  <p className="mt-1 font-semibold text-slate-900">{selectedApplicant.pickerId || '—'}</p>
+                </div>
+                <div className="rounded-2xl bg-forest-50 p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Bank name</p>
+                  <p className="mt-1 font-semibold text-slate-900">{selectedApplicant.bankName || '—'}</p>
+                </div>
+                <div className="rounded-2xl bg-forest-50 p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Bank account</p>
+                  <p className="mt-1 break-all font-semibold text-slate-900">{selectedApplicant.bankAccountNumber || '—'}</p>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-slate-200">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Date</th>
+                        <th className="px-4 py-3 font-semibold">Location</th>
+                        <th className="px-4 py-3 font-semibold">Berry type</th>
+                        <th className="px-4 py-3 font-semibold">Berry wt</th>
+                        <th className="px-4 py-3 font-semibold">Cart wt</th>
+                        <th className="px-4 py-3 font-semibold">Price / kg</th>
+                        <th className="px-4 py-3 font-semibold">Income</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {incomeRecords.length > 0 ? incomeRecords.map(record => (
+                        <tr key={record._id} className="hover:bg-slate-50/70">
+                          <td className="px-4 py-3 text-slate-700">{record.date ? formatDate(record.date) : '—'}</td>
+                          <td className="px-4 py-3 text-slate-700">{record.location || '—'}</td>
+                          <td className="px-4 py-3 text-slate-700">{record.berryType || '—'}</td>
+                          <td className="px-4 py-3 text-slate-700">{formatNumber(record.berryWeightKg)}</td>
+                          <td className="px-4 py-3 text-slate-700">{formatNumber(record.carrotWeightKg)}</td>
+                          <td className="px-4 py-3 text-slate-700">{formatNumber(record.amount)}</td>
+                          <td className="px-4 py-3 font-semibold text-emerald-700">{formatNumber(record.calculatedIncome)}</td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td className="px-4 py-8 text-center text-slate-500" colSpan="7">No income history found for this person.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                Payment actions can be added here later, for example marking an amount as paid and sending a confirmation email.
+              </div>
+            </div>
+          ) : (
+            <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
+              Select a user from the left panel to inspect bank details and income records.
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}

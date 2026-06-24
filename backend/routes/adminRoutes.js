@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
-import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus } from '../controllers/adminController.js';
+import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus, createUserAccounts, addIncomeRecord, listIncomeRecords } from '../controllers/adminController.js';
 import { requireAdminAuth } from '../middleware/adminAuth.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 
@@ -26,5 +26,32 @@ router.patch(
   validateRequest,
   updateApplicantStatus
 );
+
+router.post(
+  '/users/create',
+  [
+    body('applicantIds').isArray({ min: 1 }).withMessage('applicantIds must be a non-empty array'),
+    body('groupAssignments').isObject().withMessage('groupAssignments must be an object'),
+  ],
+  validateRequest,
+  createUserAccounts
+);
+
+router.post(
+  '/income',
+  [
+    body('applicantId').trim().notEmpty().withMessage('applicantId is required'),
+    body('date').trim().notEmpty().withMessage('date is required'),
+    body('location').trim().notEmpty().withMessage('location is required'),
+    body('berryType').trim().notEmpty().withMessage('berryType is required'),
+    body('berryWeightKg').isFloat({ min: 0 }).withMessage('berryWeightKg must be a non-negative number'),
+    body('carrotWeightKg').isFloat({ min: 0 }).withMessage('carrotWeightKg must be a non-negative number'),
+    body('amount').isFloat({ min: 0 }).withMessage('amount must be a non-negative number'),
+  ],
+  validateRequest,
+  addIncomeRecord
+);
+
+router.get('/income', listIncomeRecords);
 
 export default router;

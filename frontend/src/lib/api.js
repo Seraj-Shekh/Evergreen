@@ -78,6 +78,34 @@ export const updateApplicantStatus = async (id, status) =>
     body: JSON.stringify({ status }),
   });
 
+export const createUserAccounts = async payload =>
+  request('/api/admin/users/create', {
+    method: 'POST',
+    headers: jsonHeaders(getAdminToken()),
+    body: JSON.stringify(payload),
+  });
+
+export const addAdminIncomeRecord = async payload =>
+  request('/api/admin/income', {
+    method: 'POST',
+    headers: jsonHeaders(getAdminToken()),
+    body: JSON.stringify(payload),
+  });
+
+export const fetchAdminIncomeRecords = async (params = {}) => {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  return request(`/api/admin/income${query.toString() ? `?${query.toString()}` : ''}`, {
+    headers: jsonHeaders(getAdminToken()),
+  });
+};
+
 export const userLogin = async credentials => {
   const data = await request('/api/users/login', {
     method: 'POST',
@@ -91,6 +119,20 @@ export const userLogin = async credentials => {
 
   return data;
 };
+
+export const requestUserPasswordReset = async email =>
+  request('/api/users/forgot-password', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ email }),
+  });
+
+export const resetUserPassword = async (token, newPassword) =>
+  request('/api/users/reset-password', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ token, newPassword }),
+  });
 
 export const fetchUserProfile = async () =>
   request('/api/users/me', { headers: jsonHeaders(getUserToken()) });
@@ -108,4 +150,30 @@ export const updateUserPhone = async phoneNumber =>
     headers: jsonHeaders(getUserToken()),
     body: JSON.stringify({ phoneNumber }),
   });
+
+export const updateUserBankDetails = async (bankName, bankAccountNumber) =>
+  request('/api/users/bank-details', {
+    method: 'PATCH',
+    headers: jsonHeaders(getUserToken()),
+    body: JSON.stringify({ bankName, bankAccountNumber }),
+  });
+
+export const getGroupMembers = async () =>
+  request('/api/users/group-members', {
+    headers: jsonHeaders(getUserToken()),
+  });
+
+export const getIncomeHistory = async (params = {}) => {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  return request(`/api/users/income${query.toString() ? `?${query.toString()}` : ''}`, {
+    headers: jsonHeaders(getUserToken()),
+  });
+};
 

@@ -12,6 +12,7 @@ const applicantSchema = new mongoose.Schema(
     acceptedTerms: { type: Boolean, required: true, default: false },
     status: { type: String, enum: ['pending', 'reviewed', 'selected', 'rejected'], default: 'pending' },
     groupId: { type: String, trim: true, maxlength: 64, default: '' },
+    groupName: { type: String, trim: true, maxlength: 64, default: '', index: true },
   },
   { timestamps: true }
 );

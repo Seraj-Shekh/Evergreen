@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { changeUserPassword, clearUserToken, fetchUserProfile, getUserToken, updateUserPhone, userLogin } from '../lib/api.js';
+import PasswordField from '../components/PasswordField.jsx';
+import { changeUserPassword, clearUserToken, fetchUserProfile, getGroupMembers, getIncomeHistory, getUserToken, updateUserBankDetails, updateUserPhone, userLogin } from '../lib/api.js';
 
 const initialLogin = { email: '', password: '' };
 const initialPassword = { currentPassword: '', newPassword: '', confirmPassword: '' };
@@ -20,6 +21,19 @@ export default function UserPortalPage() {
   const [phoneError, setPhoneError] = useState('');
   const [phoneSuccess, setPhoneSuccess] = useState('');
   const [isPhoneDialogOpen, setIsPhoneDialogOpen] = useState(false);
+  const [bankForm, setBankForm] = useState({ bankName: '', bankAccountNumber: '' });
+  const [bankError, setBankError] = useState('');
+  const [bankSuccess, setBankSuccess] = useState('');
+  const [bankSaving, setBankSaving] = useState(false);
+  const [groupMembers, setGroupMembers] = useState(null);
+  const [groupError, setGroupError] = useState('');
+  const [incomeRecords, setIncomeRecords] = useState(null);
+  const [incomeError, setIncomeError] = useState('');
+  const [incomeLoading, setIncomeLoading] = useState(false);
+  const [incomePage, setIncomePage] = useState(1);
+  const [incomePageSize, setIncomePageSize] = useState(10);
+  const [incomeFilterForm, setIncomeFilterForm] = useState({ startDate: '', endDate: '' });
+  const [appliedIncomeFilters, setAppliedIncomeFilters] = useState({ startDate: '', endDate: '' });
 
   const { section } = useParams();
 
@@ -27,6 +41,7 @@ export default function UserPortalPage() {
     () => [
       { key: 'info', label: 'My information' },
       { key: 'settings', label: 'Settings' },
+      { key: 'bank', label: 'Bank details' },
       { key: 'group', label: 'Group members' },
       { key: 'income', label: 'Income details' },
     ],
@@ -43,6 +58,8 @@ export default function UserPortalPage() {
   const initials = nameParts.length
     ? `${nameParts[0][0] || ''}${nameParts[nameParts.length - 1][0] || ''}`.toUpperCase()
     : 'EB';
+  const bankActionRequired = !profile?.user?.bankName || !profile?.user?.bankAccountNumber;
+  const incomeTotal = Number(incomeRecords?.totalIncome || 0);
 
   const loadProfile = async () => {
     setProfileError('');
@@ -51,8 +68,39 @@ export default function UserPortalPage() {
       setProfile(response.data);
       setMustChangePassword(Boolean(response.data?.user?.mustChangePassword));
       setPhoneForm(response.data?.applicant?.phoneNumber || '');
+      setBankForm({
+        bankName: response.data?.user?.bankName || '',
+        bankAccountNumber: response.data?.user?.bankAccountNumber || '',
+      });
     } catch (error) {
       setProfileError(error.message || 'Unable to load profile');
+    }
+  };
+
+  const loadGroupMembers = async () => {
+    setGroupError('');
+    try {
+      const response = await getGroupMembers();
+      setGroupMembers(response.data);
+    } catch (error) {
+      setGroupError(error.message || 'Unable to load group members');
+    }
+  };
+
+  const loadIncomeHistory = async (nextPage = incomePage, nextFilters = appliedIncomeFilters) => {
+    setIncomeError('');
+    setIncomeLoading(true);
+    try {
+      const response = await getIncomeHistory({
+        page: nextPage,
+        limit: incomePageSize,
+        ...nextFilters,
+      });
+      setIncomeRecords(response.data);
+    } catch (error) {
+      setIncomeError(error.message || 'Unable to load income history');
+    } finally {
+      setIncomeLoading(false);
     }
   };
 
@@ -61,6 +109,18 @@ export default function UserPortalPage() {
       loadProfile();
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated && activeSection === 'group') {
+      loadGroupMembers();
+    }
+  }, [isAuthenticated, activeSection]);
+
+  useEffect(() => {
+    if (isAuthenticated && activeSection === 'income') {
+      loadIncomeHistory();
+    }
+  }, [isAuthenticated, activeSection, incomePage, incomePageSize, appliedIncomeFilters]);
 
   const handleLoginSubmit = async event => {
     event.preventDefault();
@@ -135,6 +195,42 @@ export default function UserPortalPage() {
     setIsPhoneDialogOpen(true);
   };
 
+  const handleBankSubmit = async event => {
+    event.preventDefault();
+    setBankError('');
+    setBankSuccess('');
+
+    if (!bankForm.bankName.trim() || !bankForm.bankAccountNumber.trim()) {
+      setBankError('Bank name and account number are required');
+      return;
+    }
+
+    setBankSaving(true);
+    try {
+      await updateUserBankDetails(bankForm.bankName.trim(), bankForm.bankAccountNumber.trim());
+      setBankSuccess('Bank details updated');
+      await loadProfile();
+    } catch (error) {
+      setBankError(error.message || 'Failed to update bank details');
+    } finally {
+      setBankSaving(false);
+    }
+  };
+
+  const handleIncomeFilterSubmit = async event => {
+    event.preventDefault();
+    const nextFilters = { ...incomeFilterForm };
+    setAppliedIncomeFilters(nextFilters);
+    setIncomePage(1);
+  };
+
+  const handleIncomeFilterReset = async () => {
+    const nextFilters = { startDate: '', endDate: '' };
+    setIncomeFilterForm(nextFilters);
+    setAppliedIncomeFilters(nextFilters);
+    setIncomePage(1);
+  };
+
   const closePhoneDialog = () => {
     setIsPhoneDialogOpen(false);
   };
@@ -183,17 +279,19 @@ export default function UserPortalPage() {
                   required
                 />
               </label>
-              <label className="block text-left text-sm font-medium text-slate-700">
-                Password
-                <input
-                  className="input mt-2"
-                  type="password"
-                  value={loginForm.password}
-                  onChange={event => setLoginForm(current => ({ ...current, password: event.target.value }))}
-                  autoComplete="current-password"
-                  required
-                />
-              </label>
+              <PasswordField
+                label="Password"
+                value={loginForm.password}
+                onChange={event => setLoginForm(current => ({ ...current, password: event.target.value }))}
+                autoComplete="current-password"
+                required
+                labelClassName="block text-left text-sm font-medium text-slate-700"
+              />
+              <div className="mt-2 text-right">
+                <Link to="/portal/forgot-password" className="text-sm font-semibold text-forest-700 hover:text-forest-800">
+                  Forgot password?
+                </Link>
+              </div>
               {loginError ? <p className="text-left text-sm text-rose-600">{loginError}</p> : null}
               <button
                 type="submit"
@@ -222,6 +320,9 @@ export default function UserPortalPage() {
               <p className="mt-1 text-xs text-white/70">{profile?.user?.email || ''}</p>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
                 {mustChangePassword ? (
+                  <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">Action required</span>
+                ) : null}
+                {bankActionRequired ? (
                   <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">Action required</span>
                 ) : null}
                 <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">
@@ -321,8 +422,12 @@ export default function UserPortalPage() {
                     <dd className="mt-1 font-semibold text-slate-900">{profile?.user?.email || '—'}</dd>
                   </div>
                   <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                    <dt className="text-xs uppercase tracking-wide text-slate-400">Group ID</dt>
-                    <dd className="mt-1 font-semibold text-slate-900">{profile?.applicant?.groupId || 'Not assigned yet'}</dd>
+                    <dt className="text-xs uppercase tracking-wide text-slate-400">Picker ID</dt>
+                    <dd className="mt-1 font-semibold text-slate-900">{profile?.user?.pickerId || 'Not assigned yet'}</dd>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                    <dt className="text-xs uppercase tracking-wide text-slate-400">Group name</dt>
+                    <dd className="mt-1 font-semibold text-slate-900">{profile?.applicant?.groupName || 'Not assigned yet'}</dd>
                   </div>
                   <div className="rounded-2xl bg-slate-50 px-4 py-3">
                     <div className="flex items-center justify-between">
@@ -359,36 +464,24 @@ export default function UserPortalPage() {
                   </div>
                   <p className="mt-2 text-sm text-slate-600">Use a new password and keep it safe.</p>
                   <form className="mt-5 space-y-4" onSubmit={handlePasswordSubmit}>
-                    <label className="block text-sm font-medium text-slate-700">
-                      Current password
-                      <input
-                        className="input mt-2"
-                        type="password"
-                        value={passwordForm.currentPassword}
-                        onChange={event => setPasswordForm(current => ({ ...current, currentPassword: event.target.value }))}
-                        required
-                      />
-                    </label>
-                    <label className="block text-sm font-medium text-slate-700">
-                      New password
-                      <input
-                        className="input mt-2"
-                        type="password"
-                        value={passwordForm.newPassword}
-                        onChange={event => setPasswordForm(current => ({ ...current, newPassword: event.target.value }))}
-                        required
-                      />
-                    </label>
-                    <label className="block text-sm font-medium text-slate-700">
-                      Confirm new password
-                      <input
-                        className="input mt-2"
-                        type="password"
-                        value={passwordForm.confirmPassword}
-                        onChange={event => setPasswordForm(current => ({ ...current, confirmPassword: event.target.value }))}
-                        required
-                      />
-                    </label>
+                    <PasswordField
+                      label="Current password"
+                      value={passwordForm.currentPassword}
+                      onChange={event => setPasswordForm(current => ({ ...current, currentPassword: event.target.value }))}
+                      required
+                    />
+                    <PasswordField
+                      label="New password"
+                      value={passwordForm.newPassword}
+                      onChange={event => setPasswordForm(current => ({ ...current, newPassword: event.target.value }))}
+                      required
+                    />
+                    <PasswordField
+                      label="Confirm new password"
+                      value={passwordForm.confirmPassword}
+                      onChange={event => setPasswordForm(current => ({ ...current, confirmPassword: event.target.value }))}
+                      required
+                    />
                     {passwordError ? <p className="text-sm text-rose-600">{passwordError}</p> : null}
                     {passwordSuccess ? <p className="text-sm text-emerald-600">{passwordSuccess}</p> : null}
                     <button
@@ -403,24 +496,228 @@ export default function UserPortalPage() {
               </div>
             )}
 
+            {activeSection === 'bank' && (
+              <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="text-xl font-semibold text-slate-900">Bank details</h3>
+                  {bankActionRequired ? (
+                    <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700">Action required</span>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-sm text-slate-500">Add your bank name and account number for payment processing.</p>
+                <form className="mt-5 grid gap-4" onSubmit={handleBankSubmit}>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Bank name
+                    <input
+                      className="input mt-2"
+                      value={bankForm.bankName}
+                      onChange={event => setBankForm(current => ({ ...current, bankName: event.target.value }))}
+                      placeholder="Example Bank"
+                      required
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Bank account number
+                    <input
+                      className="input mt-2"
+                      value={bankForm.bankAccountNumber}
+                      onChange={event => setBankForm(current => ({ ...current, bankAccountNumber: event.target.value }))}
+                      placeholder="FI00 1234 5678 90"
+                      required
+                    />
+                  </label>
+                  {bankError ? <p className="text-sm text-rose-600">{bankError}</p> : null}
+                  {bankSuccess ? <p className="text-sm text-emerald-600">{bankSuccess}</p> : null}
+                  <button
+                    type="submit"
+                    className="rounded-full bg-forest-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-forest-800 disabled:cursor-not-allowed disabled:opacity-70"
+                    disabled={bankSaving}
+                  >
+                    {bankSaving ? 'Saving…' : 'Save bank details'}
+                  </button>
+                </form>
+              </div>
+            )}
+
             {activeSection === 'group' && (
               <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
                 <h3 className="text-xl font-semibold text-slate-900">Group members</h3>
-                <p className="mt-1 text-sm text-slate-500">Members assigned to your group will appear here.</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {groupMembers?.groupName ? `Members in ${groupMembers.groupName}` : 'Members assigned to your group will appear here.'}
+                </p>
+                {groupError ? <p className="mt-3 text-sm text-rose-600">{groupError}</p> : null}
                 <div className="mt-5 grid gap-3">
-                  <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-sm text-slate-500">
-                    No group members assigned yet.
-                  </div>
+                  {groupMembers?.members && groupMembers.members.length > 0 ? (
+                    groupMembers.members.map(member => (
+                      <div key={member._id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-semibold text-slate-900">{member.fullName}</p>
+                            <p className="text-xs text-slate-500">{member.email}</p>
+                            {member.phoneNumber ? <p className="text-xs text-slate-500">{member.phoneNumber}</p> : null}
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Group</p>
+                            <p className="text-sm font-semibold text-slate-900">{member.groupName}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-sm text-slate-500">
+                      No group members assigned yet.
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
             {activeSection === 'income' && (
               <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-                <h3 className="text-xl font-semibold text-slate-900">Income details</h3>
-                <p className="mt-1 text-sm text-slate-500">Daily berry sales and income details will appear here.</p>
-                <div className="mt-5 rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">
-                  This section will be enabled once daily income tracking is added.
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold text-slate-900">Income details</h3>
+                    <p className="mt-1 text-sm text-slate-500">Track your daily berry picking income and weight details.</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900">
+                    Total earned: <span className="text-forest-700">${incomeTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+                <form className="mt-4 grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:grid-cols-2" onSubmit={handleIncomeFilterSubmit}>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Start date
+                    <input
+                      className="input mt-2"
+                      type="date"
+                      value={incomeFilterForm.startDate}
+                      onChange={event => setIncomeFilterForm(current => ({ ...current, startDate: event.target.value }))}
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    End date
+                    <input
+                      className="input mt-2"
+                      type="date"
+                      value={incomeFilterForm.endDate}
+                      onChange={event => setIncomeFilterForm(current => ({ ...current, endDate: event.target.value }))}
+                    />
+                  </label>
+                  <div className="flex gap-2 sm:col-span-2">
+                    <button type="submit" className="rounded-full bg-forest-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-forest-800">
+                      Apply date filter
+                    </button>
+                    <button type="button" onClick={handleIncomeFilterReset} className="rounded-full border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+                      Reset
+                    </button>
+                  </div>
+                </form>
+                {incomeError ? <p className="mt-3 text-sm text-rose-600">{incomeError}</p> : null}
+                <div className="mt-5">
+                  {incomeRecords?.records && incomeRecords.records.length > 0 ? (
+                    <div>
+                      <div className="space-y-3 md:hidden">
+                        {incomeRecords.records.map(record => {
+                          const date = new Date(record.date);
+                          const formatted = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
+                          return (
+                            <article key={record._id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">{formatted}</p>
+                                  <p className="text-xs text-slate-500">{record.location || '—'}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-xs uppercase tracking-wide text-slate-400">Income</p>
+                                  <p className="text-base font-semibold text-emerald-700">${record.calculatedIncome.toFixed(2)}</p>
+                                </div>
+                              </div>
+                              <dl className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-600">
+                                <div>
+                                  <dt className="text-xs uppercase tracking-wide text-slate-400">Berry type</dt>
+                                  <dd className="font-medium text-slate-900">{record.berryType || '—'}</dd>
+                                </div>
+                                <div>
+                                  <dt className="text-xs uppercase tracking-wide text-slate-400">Unit price</dt>
+                                  <dd className="font-medium text-slate-900">${Number(record.amount || 0).toFixed(2)}</dd>
+                                </div>
+                                <div>
+                                  <dt className="text-xs uppercase tracking-wide text-slate-400">Berry wt</dt>
+                                  <dd className="font-medium text-slate-900">{record.berryWeightKg}</dd>
+                                </div>
+                                <div>
+                                  <dt className="text-xs uppercase tracking-wide text-slate-400">Cart wt</dt>
+                                  <dd className="font-medium text-slate-900">{record.carrotWeightKg}</dd>
+                                </div>
+                              </dl>
+                            </article>
+                          );
+                        })}
+                      </div>
+                      <div className="hidden md:block">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50">
+                              <th className="px-4 py-3 text-left font-semibold text-slate-900">Date</th>
+                              <th className="px-4 py-3 text-left font-semibold text-slate-900">Location</th>
+                              <th className="px-4 py-3 text-left font-semibold text-slate-900">Berry type</th>
+                              <th className="px-4 py-3 text-right font-semibold text-slate-900">Berry (kg)</th>
+                              <th className="px-4 py-3 text-right font-semibold text-slate-900">Cart (kg)</th>
+                              <th className="px-4 py-3 text-right font-semibold text-slate-900">Unit price</th>
+                              <th className="px-4 py-3 text-right font-semibold text-slate-900">Income</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {incomeRecords.records.map(record => {
+                              const date = new Date(record.date);
+                              const formatted = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+                              return (
+                                <tr key={record._id} className="border-b border-slate-100 hover:bg-slate-50">
+                                  <td className="px-4 py-3 font-medium text-slate-900">{formatted}</td>
+                                  <td className="px-4 py-3 text-slate-600">{record.location || '—'}</td>
+                                  <td className="px-4 py-3 text-slate-600">{record.berryType || '—'}</td>
+                                  <td className="px-4 py-3 text-right text-slate-600">{record.berryWeightKg}</td>
+                                  <td className="px-4 py-3 text-right text-slate-600">{record.carrotWeightKg}</td>
+                                  <td className="px-4 py-3 text-right text-slate-600">${Number(record.amount || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-right font-semibold text-emerald-600">${record.calculatedIncome.toFixed(2)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="mt-4 flex items-center justify-between">
+                        <p className="text-xs text-slate-500">
+                          Page {incomeRecords.page} of {incomeRecords.totalPages} ({incomeRecords.total} records)
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIncomePage(p => Math.max(1, p - 1))}
+                            disabled={incomePage === 1 || incomeLoading}
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Previous
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIncomePage(p => Math.min(incomeRecords.totalPages, p + 1))}
+                            disabled={incomePage === incomeRecords.totalPages || incomeLoading}
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                      <div className="mt-4 rounded-2xl bg-forest-50 px-4 py-3 text-sm font-semibold text-slate-900">
+                        Total amount earned: <span className="text-forest-700">${incomeTotal.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">
+                      {incomeLoading ? 'Loading income records...' : 'No income records yet. Daily tracking will appear here.'}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

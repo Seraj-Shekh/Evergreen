@@ -1,9 +1,15 @@
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import Applicant from '../models/Applicant.js';
 import UserAccount from '../models/UserAccount.js';
+import IncomeRecord from '../models/IncomeRecord.js';
 import { createUserToken } from '../services/userToken.js';
+import emailService from '../services/emailService.js';
 
 const sanitizeEmail = value => String(value || '').trim().toLowerCase();
+const hashResetToken = token => crypto.createHash('sha256').update(String(token)).digest('hex');
+
+const getClientUrl = () => String(process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
 
 export const loginUser = async (req, res, next) => {
   try {
@@ -36,9 +42,80 @@ export const loginUser = async (req, res, next) => {
           id: user._id,
           email: user.email,
           fullName: user.fullName,
+          pickerId: user.pickerId,
         },
       },
     });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const requestPasswordReset = async (req, res, next) => {
+  try {
+    const email = sanitizeEmail(req.body.email);
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Valid email is required' });
+    }
+
+    const user = await UserAccount.findOne({ email });
+
+    if (user) {
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      user.resetPasswordTokenHash = hashResetToken(resetToken);
+      user.resetPasswordExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      await user.save();
+
+      const resetUrl = `${getClientUrl()}/portal/reset-password?token=${encodeURIComponent(resetToken)}`;
+
+      try {
+        await emailService.sendPasswordResetEmail({
+          email: user.email,
+          fullName: user.fullName,
+          resetUrl,
+        });
+      } catch (emailError) {
+        console.warn(`Failed to send password reset email to ${user.email}:`, emailError.message);
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'If an account exists for that email, a reset link has been sent.',
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const resetPassword = async (req, res, next) => {
+  try {
+    const token = String(req.body.token || '').trim();
+    const newPassword = String(req.body.newPassword || '');
+
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Reset token is required' });
+    }
+
+    const tokenHash = hashResetToken(token);
+    const user = await UserAccount.findOne({
+      resetPasswordTokenHash: tokenHash,
+      resetPasswordExpiresAt: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Reset link is invalid or has expired' });
+    }
+
+    const nextHash = await bcrypt.hash(newPassword, 10);
+    user.passwordHash = nextHash;
+    user.mustChangePassword = false;
+    user.resetPasswordTokenHash = '';
+    user.resetPasswordExpiresAt = undefined;
+    await user.save();
+
+    return res.json({ success: true, message: 'Password updated successfully' });
   } catch (error) {
     return next(error);
   }
@@ -68,6 +145,9 @@ export const getCurrentUser = async (req, res, next) => {
           email: user.email,
           fullName: user.fullName,
           mustChangePassword: Boolean(user.mustChangePassword),
+          pickerId: user.pickerId,
+          bankName: user.bankName || '',
+          bankAccountNumber: user.bankAccountNumber || '',
         },
         applicant: applicant ? {
           id: applicant._id,
@@ -75,6 +155,7 @@ export const getCurrentUser = async (req, res, next) => {
           submittedAt: applicant.createdAt,
           phoneNumber: applicant.phoneNumber,
           groupId: applicant.groupId || '',
+          groupName: applicant.groupName || '',
         } : null,
       },
     });
@@ -148,6 +229,156 @@ export const updatePhoneNumber = async (req, res, next) => {
       message: 'Phone number updated',
       data: {
         phoneNumber: applicant.phoneNumber,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const updateBankDetails = async (req, res, next) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const bankName = String(req.body.bankName || '').trim();
+    const bankAccountNumber = String(req.body.bankAccountNumber || '').trim();
+
+    if (!bankName || !bankAccountNumber) {
+      return res.status(400).json({ success: false, message: 'bankName and bankAccountNumber are required' });
+    }
+
+    const user = await UserAccount.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    user.bankName = bankName;
+    user.bankAccountNumber = bankAccountNumber;
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: 'Bank details updated',
+      data: {
+        bankName: user.bankName,
+        bankAccountNumber: user.bankAccountNumber,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const getGroupMembers = async (req, res, next) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const user = await UserAccount.findById(userId).lean();
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const applicant = await Applicant.findById(user.applicantId).lean();
+
+    if (!applicant || !applicant.groupName) {
+      return res.json({
+        success: true,
+        data: {
+          groupName: applicant?.groupName || '',
+          members: [],
+        },
+      });
+    }
+
+    const groupMembers = await Applicant.find({ groupName: applicant.groupName })
+      .select(['_id', 'fullName', 'email', 'phoneNumber', 'groupName'])
+      .lean();
+
+    return res.json({
+      success: true,
+      data: {
+        groupName: applicant.groupName,
+        members: groupMembers,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const getIncomeHistory = async (req, res, next) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const { startDate, endDate, limit = 50, page = 1 } = req.query;
+
+    const user = await UserAccount.findById(userId).lean();
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const filter = { applicantId: user.applicantId };
+
+    if (startDate || endDate) {
+      filter.date = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        if (Number.isNaN(start.getTime())) {
+          return res.status(400).json({ success: false, message: 'Invalid startDate format' });
+        }
+        filter.date.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        if (Number.isNaN(end.getTime())) {
+          return res.status(400).json({ success: false, message: 'Invalid endDate format' });
+        }
+        end.setUTCHours(23, 59, 59, 999);
+        filter.date.$lte = end;
+      }
+    }
+
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.max(1, Math.min(Number(limit), 100));
+    const skip = (pageNum - 1) * limitNum;
+
+    const [total, records, totalIncomeAggregate] = await Promise.all([
+      IncomeRecord.countDocuments(filter),
+      IncomeRecord.find(filter)
+        .sort({ date: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      IncomeRecord.aggregate([
+        { $match: filter },
+        { $group: { _id: null, totalIncome: { $sum: '$calculatedIncome' } } },
+      ]),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        records,
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limitNum)),
+        totalIncome: totalIncomeAggregate[0]?.totalIncome || 0,
       },
     });
   } catch (error) {

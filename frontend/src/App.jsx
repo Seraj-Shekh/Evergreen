@@ -6,6 +6,9 @@ import PrivacyPage from './pages/PrivacyPage.jsx';
 import TermsPage from './pages/TermsPage.jsx';
 import SuccessPage from './pages/SuccessPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
+import AdminIncomePage from './pages/AdminIncomePage.jsx';
+import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx';
+import ResetPasswordPage from './pages/ResetPasswordPage.jsx';
 import UserPortalPage from './pages/UserPortalPage.jsx';
 
 export default function App() {
@@ -17,7 +20,10 @@ export default function App() {
         <Route path="/privacy-policy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/admin/income" element={<AdminIncomePage />} />
         <Route path="/portal" element={<UserPortalPage />} />
+        <Route path="/portal/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/portal/reset-password" element={<ResetPasswordPage />} />
         <Route path="/portal/:section" element={<UserPortalPage />} />
         <Route path="/success" element={<SuccessPage />} />
       </Route>
