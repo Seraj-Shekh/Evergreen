@@ -11,6 +11,7 @@ import emailService from '../services/emailService.js';
 const allowedStatuses = new Set(['pending', 'reviewed', 'selected', 'rejected']);
 
 const escapeRegex = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const normalizeGroupName = value => String(value || '').trim().replace(/\s+/g, ' ');
 
 const parseBooleanFilter = value => {
   if (value === undefined || value === null || value === '') {
@@ -54,7 +55,14 @@ const buildApplicantFilter = query => {
   }
 
   if (query.groupName) {
-    filter.groupName = { $regex: escapeRegex(String(query.groupName).trim()), $options: 'i' };
+    const normalizedGroupName = normalizeGroupName(query.groupName);
+
+    if (normalizedGroupName) {
+      filter.groupName = {
+        $regex: `^${escapeRegex(normalizedGroupName)}$`,
+        $options: 'i',
+      };
+    }
   }
 
   return filter;
@@ -374,7 +382,7 @@ export const createUserAccounts = async (req, res, next) => {
         }
 
         // Update applicant with group
-        applicant.groupName = String(groupName).trim();
+        applicant.groupName = normalizeGroupName(groupName);
         applicant.status = 'selected';
         await applicant.save();
 

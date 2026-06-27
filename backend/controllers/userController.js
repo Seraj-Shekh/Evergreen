@@ -7,6 +7,7 @@ import { createUserToken } from '../services/userToken.js';
 import emailService from '../services/emailService.js';
 
 const sanitizeEmail = value => String(value || '').trim().toLowerCase();
+const normalizeGroupName = value => String(value || '').trim().replace(/\s+/g, ' ');
 const hashResetToken = token => crypto.createHash('sha256').update(String(token)).digest('hex');
 
 const getClientUrl = () => String(process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
@@ -300,7 +301,12 @@ export const getGroupMembers = async (req, res, next) => {
       });
     }
 
-    const groupMembers = await Applicant.find({ groupName: applicant.groupName })
+    const groupMembers = await Applicant.find({
+      groupName: {
+        $regex: `^${normalizeGroupName(applicant.groupName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+        $options: 'i',
+      },
+    })
       .select(['_id', 'fullName', 'email', 'phoneNumber', 'groupName'])
       .lean();
 
