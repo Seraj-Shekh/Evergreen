@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
-import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus, createUserAccounts, addIncomeRecord, listIncomeRecords } from '../controllers/adminController.js';
+import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus, createUserAccounts, removeUserAccounts, addIncomeRecord, listIncomeRecords, listExpensePlans, saveExpensePlan, getPaymentPreview, listPaymentRecords, createPayment } from '../controllers/adminController.js';
 import { requireAdminAuth } from '../middleware/adminAuth.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 
@@ -38,6 +38,15 @@ router.post(
 );
 
 router.post(
+  '/users/remove',
+  [
+    body('applicantIds').isArray({ min: 1 }).withMessage('applicantIds must be a non-empty array'),
+  ],
+  validateRequest,
+  removeUserAccounts
+);
+
+router.post(
   '/income',
   [
     body('applicantId').trim().notEmpty().withMessage('applicantId is required'),
@@ -53,5 +62,29 @@ router.post(
 );
 
 router.get('/income', listIncomeRecords);
+
+router.get('/payments/preview', getPaymentPreview);
+router.get('/payments', listPaymentRecords);
+router.post(
+  '/payments',
+  [
+    body('applicantId').trim().notEmpty().withMessage('applicantId is required'),
+  ],
+  validateRequest,
+  createPayment
+);
+
+router.get('/expense-plans', listExpensePlans);
+router.post(
+  '/expense-plans',
+  [
+    body('scopeType').trim().isIn(['group', 'applicant']).withMessage('scopeType must be group or applicant'),
+    body('expenseType').trim().isIn(['own-car', 'rented-car']).withMessage('expenseType must be own-car or rented-car'),
+    body('startsOn').trim().notEmpty().withMessage('startsOn is required'),
+  ],
+  validateRequest,
+  saveExpensePlan
+);
+router.patch('/expense-plans/:id', saveExpensePlan);
 
 export default router;

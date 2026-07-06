@@ -4,7 +4,10 @@ import PasswordField from '../components/PasswordField.jsx';
 import {
   adminLogin,
   clearAdminToken,
+  createAdminPaymentRecord,
   fetchApplicant,
+  fetchAdminPaymentPreview,
+  fetchAdminPaymentRecords,
   fetchApplicants,
   getAdminToken,
 } from '../lib/api.js';
@@ -23,6 +26,8 @@ const formatNumber = value => {
   return Number.isFinite(parsed) ? parsed.toFixed(2) : String(value || '0');
 };
 
+const formatEuro = value => `€${formatNumber(value)}`;
+
 export default function AdminIncomePage() {
   const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAdminToken()));
@@ -37,9 +42,17 @@ export default function AdminIncomePage() {
   const [selectedApplicant, setSelectedApplicant] = useState(null);
   const [selectedLoading, setSelectedLoading] = useState(false);
   const [selectedError, setSelectedError] = useState('');
+  const [paymentForm, setPaymentForm] = useState({ fromDate: '', toDate: '', paidAmount: '', notes: '' });
+  const [paymentPreview, setPaymentPreview] = useState(null);
+  const [paymentHistory, setPaymentHistory] = useState([]);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
+  const [paymentSuccess, setPaymentSuccess] = useState('');
 
   const totalIncome = useMemo(() => Number(selectedApplicant?.totalIncome || 0), [selectedApplicant]);
   const incomeRecords = selectedApplicant?.incomeRecords || [];
+  const paymentTotal = useMemo(() => Number((paymentPreview?.netPayable ?? selectedApplicant?.totalIncome) || 0), [paymentPreview, selectedApplicant]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -131,6 +144,84 @@ export default function AdminIncomePage() {
       setSelectedLoading(false);
     }
   };
+
+  const loadPaymentHistory = async applicantId => {
+    try {
+      const response = await fetchAdminPaymentRecords({ applicantId });
+      setPaymentHistory(response.data.paymentRecords || []);
+    } catch {
+      setPaymentHistory([]);
+    }
+  };
+
+  const loadPaymentPreview = async () => {
+    if (!selectedApplicant?._id) {
+      setPaymentError('Select an applicant first');
+      return;
+    }
+
+    setPaymentLoading(true);
+    setPaymentError('');
+    setPaymentSuccess('');
+
+    try {
+      const response = await fetchAdminPaymentPreview({
+        applicantId: selectedApplicant._id,
+        fromDate: paymentForm.fromDate,
+        toDate: paymentForm.toDate,
+      });
+
+      setPaymentPreview(response.data);
+    } catch (error) {
+      setPaymentPreview(null);
+      setPaymentError(error.message || 'Failed to load payment preview');
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
+  const handleMarkAsPaid = async event => {
+    event.preventDefault();
+
+    if (!selectedApplicant?._id) {
+      setPaymentError('Select an applicant first');
+      return;
+    }
+
+    setPaymentSaving(true);
+    setPaymentError('');
+    setPaymentSuccess('');
+
+    try {
+      const response = await createAdminPaymentRecord({
+        applicantId: selectedApplicant._id,
+        fromDate: paymentForm.fromDate,
+        toDate: paymentForm.toDate,
+        paidAmount: paymentForm.paidAmount,
+        notes: paymentForm.notes,
+      });
+
+      setPaymentSuccess('Payment marked as paid and email sent');
+      setPaymentPreview(response.data?.summary || null);
+      await loadPaymentHistory(selectedApplicant._id);
+    } catch (error) {
+      setPaymentError(error.message || 'Failed to mark payment as paid');
+    } finally {
+      setPaymentSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedApplicant?._id) {
+      setPaymentPreview(null);
+      setPaymentError('');
+      setPaymentSuccess('');
+      loadPaymentHistory(selectedApplicant._id);
+    } else {
+      setPaymentHistory([]);
+      setPaymentPreview(null);
+    }
+  }, [selectedApplicant?._id]);
 
   if (!isAuthenticated) {
     return (
@@ -283,7 +374,7 @@ export default function AdminIncomePage() {
             {selectedApplicant ? (
               <div className="text-right">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Current total</p>
-                <p className="text-lg font-semibold text-emerald-700">{formatNumber(totalIncome)}</p>
+                <p className="text-lg font-semibold text-emerald-700">{formatEuro(totalIncome)}</p>
               </div>
             ) : null}
           </div>
@@ -334,8 +425,8 @@ export default function AdminIncomePage() {
                           <td className="px-4 py-3 text-slate-700">{record.berryType || '—'}</td>
                           <td className="px-4 py-3 text-slate-700">{formatNumber(record.berryWeightKg)}</td>
                           <td className="px-4 py-3 text-slate-700">{formatNumber(record.carrotWeightKg)}</td>
-                          <td className="px-4 py-3 text-slate-700">{formatNumber(record.amount)}</td>
-                          <td className="px-4 py-3 font-semibold text-emerald-700">{formatNumber(record.calculatedIncome)}</td>
+                          <td className="px-4 py-3 text-slate-700">{formatEuro(record.amount)}</td>
+                          <td className="px-4 py-3 font-semibold text-emerald-700">{formatEuro(record.calculatedIncome)}</td>
                         </tr>
                       )) : (
                         <tr>
@@ -347,8 +438,135 @@ export default function AdminIncomePage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                Payment actions can be added here later, for example marking an amount as paid and sending a confirmation email.
+              <form className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4" onSubmit={handleMarkAsPaid}>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">Payout settlement</h3>
+                    <p className="text-sm text-slate-600">Choose a date range, preview the settlement, then mark it as paid.</p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-4 py-3 text-right shadow-sm">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Preview net payable</p>
+                    <p className="text-lg font-semibold text-forest-700">{formatEuro(paymentTotal)}</p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-sm font-medium text-slate-700">
+                    From date
+                    <input
+                      className="input mt-2"
+                      type="date"
+                      value={paymentForm.fromDate}
+                      onChange={event => setPaymentForm(current => ({ ...current, fromDate: event.target.value }))}
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    To date
+                    <input
+                      className="input mt-2"
+                      type="date"
+                      value={paymentForm.toDate}
+                      onChange={event => setPaymentForm(current => ({ ...current, toDate: event.target.value }))}
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Paid amount
+                    <input
+                      className="input mt-2"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={paymentForm.paidAmount}
+                      onChange={event => setPaymentForm(current => ({ ...current, paidAmount: event.target.value }))}
+                      placeholder="Leave empty to use net payable"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Note
+                    <input
+                      className="input mt-2"
+                      value={paymentForm.notes}
+                      onChange={event => setPaymentForm(current => ({ ...current, notes: event.target.value }))}
+                      placeholder="Optional payment note"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-3 rounded-2xl bg-white p-4 shadow-sm sm:grid-cols-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Income total</p>
+                    <p className="mt-1 font-semibold text-slate-900">{formatEuro(paymentPreview?.incomeTotal ?? totalIncome)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Expense total</p>
+                    <p className="mt-1 font-semibold text-slate-900">{formatEuro(paymentPreview?.expenseTotal ?? 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Net payable</p>
+                    <p className="mt-1 font-semibold text-forest-700">{formatEuro(paymentPreview?.netPayable ?? 0)}</p>
+                  </div>
+                </div>
+
+                {paymentError ? <p className="text-sm text-rose-600">{paymentError}</p> : null}
+                {paymentSuccess ? <p className="text-sm text-emerald-600">{paymentSuccess}</p> : null}
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={loadPaymentPreview}
+                    disabled={paymentLoading}
+                    className="rounded-full border border-forest-200 bg-white px-4 py-2.5 text-sm font-semibold text-forest-700 transition hover:bg-forest-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {paymentLoading ? 'Previewing…' : 'Preview settlement'}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={paymentSaving}
+                    className="rounded-full bg-forest-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-forest-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {paymentSaving ? 'Saving…' : 'Mark as paid'}
+                  </button>
+                </div>
+              </form>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">Payment history</h3>
+                    <p className="text-sm text-slate-500">All payout settlements recorded for this user.</p>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{paymentHistory.length}</span>
+                </div>
+                <div className="mt-4 overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Period</th>
+                        <th className="px-4 py-3 font-semibold">Income</th>
+                        <th className="px-4 py-3 font-semibold">Expense</th>
+                        <th className="px-4 py-3 font-semibold">Paid amount</th>
+                        <th className="px-4 py-3 font-semibold">Paid at</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {paymentHistory.length > 0 ? paymentHistory.map(record => (
+                        <tr key={record._id}>
+                          <td className="px-4 py-3 text-slate-700">
+                            {record.fromDate ? formatDate(record.fromDate) : '—'} → {record.toDate ? formatDate(record.toDate) : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">{formatEuro(record.incomeTotal)}</td>
+                          <td className="px-4 py-3 text-slate-700">{formatEuro(record.expenseTotal)}</td>
+                          <td className="px-4 py-3 font-semibold text-forest-700">{formatEuro(record.paidAmount)}</td>
+                          <td className="px-4 py-3 text-slate-700">{record.paidAt ? formatDate(record.paidAt) : '—'}</td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td className="px-4 py-6 text-center text-slate-500" colSpan="5">No payment history yet.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           ) : (

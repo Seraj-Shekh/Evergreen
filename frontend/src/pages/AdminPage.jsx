@@ -10,6 +10,7 @@ import {
   fetchApplicant,
   fetchApplicants,
   getAdminToken,
+  removeAdminUserAccounts,
   updateApplicantStatus,
 } from '../lib/api.js';
 
@@ -84,6 +85,9 @@ export default function AdminPage() {
   const [groupAccountLoading, setGroupAccountLoading] = useState(false);
   const [groupAccountError, setGroupAccountError] = useState('');
   const [groupAccountSuccess, setGroupAccountSuccess] = useState('');
+  const [removeAccountLoading, setRemoveAccountLoading] = useState(false);
+  const [removeAccountError, setRemoveAccountError] = useState('');
+  const [removeAccountSuccess, setRemoveAccountSuccess] = useState('');
   const [incomeForm, setIncomeForm] = useState({ applicantId: '', date: today, location: '', berryType: '', berryWeightKg: '', carrotWeightKg: '', amount: '' });
   const [incomeSaving, setIncomeSaving] = useState(false);
   const [incomeError, setIncomeError] = useState('');
@@ -236,6 +240,38 @@ export default function AdminPage() {
     }
   };
 
+  const handleRemoveSelectedMembers = async event => {
+    event.preventDefault();
+    setRemoveAccountError('');
+    setRemoveAccountSuccess('');
+
+    if (selectedApplicantIds.length === 0) {
+      setRemoveAccountError('Select at least one applicant to remove');
+      return;
+    }
+
+    const confirmed = window.confirm('Remove the selected members, delete their user accounts, and clear their group assignment?');
+    if (!confirmed) {
+      return;
+    }
+
+    setRemoveAccountLoading(true);
+
+    try {
+      const response = await removeAdminUserAccounts({ applicantIds: selectedApplicantIds });
+      const removedCount = response.data?.removed?.length || 0;
+      const errorCount = response.data?.errors?.length || 0;
+      setRemoveAccountSuccess(`Removed ${removedCount} member(s)${errorCount ? ` with ${errorCount} error(s)` : ''}.`);
+      setSelectedApplicantIds([]);
+      setSelectedApplicant(null);
+      await loadApplicants(pagination.page, appliedFilters, pageSize);
+    } catch (removeError) {
+      setRemoveAccountError(removeError.message || 'Failed to remove selected members');
+    } finally {
+      setRemoveAccountLoading(false);
+    }
+  };
+
   const handleIncomeSubmit = async event => {
     event.preventDefault();
     setIncomeError('');
@@ -345,6 +381,9 @@ export default function AdminPage() {
       <div className="mb-4 flex items-center justify-end gap-2 sm:gap-3">
         <Link to="/admin/income" className="rounded-full border border-forest-200 px-3 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50 sm:px-4">
           Income manager
+        </Link>
+        <Link to="/admin/expenses" className="rounded-full border border-forest-200 px-3 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50 sm:px-4">
+          Expense manager
         </Link>
         <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm">
           <span className="whitespace-nowrap">Rows</span>
@@ -656,6 +695,20 @@ export default function AdminPage() {
                 {groupAccountLoading ? 'Creating…' : 'Create accounts'}
               </button>
             </form>
+            <div className="mt-3 rounded-2xl border border-rose-100 bg-rose-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">Member removal</p>
+              <p className="mt-1 text-xs text-slate-600">Remove selected people who cancelled before going picking. Their user account, group assignment, and picker ID are cleared.</p>
+              {removeAccountError ? <p className="mt-2 text-xs text-rose-600">{removeAccountError}</p> : null}
+              {removeAccountSuccess ? <p className="mt-2 text-xs text-emerald-600">{removeAccountSuccess}</p> : null}
+              <button
+                type="button"
+                onClick={handleRemoveSelectedMembers}
+                disabled={removeAccountLoading}
+                className="mt-3 w-full rounded-full border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {removeAccountLoading ? 'Removing…' : 'Remove selected members'}
+              </button>
+            </div>
           </div>
 
           <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">

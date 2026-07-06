@@ -85,6 +85,13 @@ export const createUserAccounts = async payload =>
     body: JSON.stringify(payload),
   });
 
+export const removeAdminUserAccounts = async payload =>
+  request('/api/admin/users/remove', {
+    method: 'POST',
+    headers: jsonHeaders(getAdminToken()),
+    body: JSON.stringify(payload),
+  });
+
 export const addAdminIncomeRecord = async payload =>
   request('/api/admin/income', {
     method: 'POST',
@@ -105,6 +112,62 @@ export const fetchAdminIncomeRecords = async (params = {}) => {
     headers: jsonHeaders(getAdminToken()),
   });
 };
+
+export const fetchAdminExpensePlans = async (params = {}) => {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  return request(`/api/admin/expense-plans${query.toString() ? `?${query.toString()}` : ''}`, {
+    headers: jsonHeaders(getAdminToken()),
+  });
+};
+
+export const saveAdminExpensePlan = async payload =>
+  request(payload?.id ? `/api/admin/expense-plans/${payload.id}` : '/api/admin/expense-plans', {
+    method: payload?.id ? 'PATCH' : 'POST',
+    headers: jsonHeaders(getAdminToken()),
+    body: JSON.stringify(payload),
+  });
+
+export const fetchAdminPaymentPreview = async params => {
+  const query = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  return request(`/api/admin/payments/preview${query.toString() ? `?${query.toString()}` : ''}`, {
+    headers: jsonHeaders(getAdminToken()),
+  });
+};
+
+export const fetchAdminPaymentRecords = async params => {
+  const query = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  return request(`/api/admin/payments${query.toString() ? `?${query.toString()}` : ''}`, {
+    headers: jsonHeaders(getAdminToken()),
+  });
+};
+
+export const createAdminPaymentRecord = async payload =>
+  request('/api/admin/payments', {
+    method: 'POST',
+    headers: jsonHeaders(getAdminToken()),
+    body: JSON.stringify(payload),
+  });
 
 export const userLogin = async credentials => {
   const data = await request('/api/users/login', {
@@ -173,6 +236,34 @@ export const getIncomeHistory = async (params = {}) => {
   });
 
   return request(`/api/users/income${query.toString() ? `?${query.toString()}` : ''}`, {
+    headers: jsonHeaders(getUserToken()),
+  });
+};
+
+export const getExpenseHistory = async (params = {}) => {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  return request(`/api/users/expenses${query.toString() ? `?${query.toString()}` : ''}`, {
+    headers: jsonHeaders(getUserToken()),
+  });
+};
+
+export const getUserPaymentHistory = async (params = {}) => {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  return request(`/api/users/payments${query.toString() ? `?${query.toString()}` : ''}`, {
     headers: jsonHeaders(getUserToken()),
   });
 };

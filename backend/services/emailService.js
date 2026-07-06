@@ -54,6 +54,14 @@ const formatMoney = (value) => {
   return parsed.toFixed(2);
 };
 
+const formatDate = value => {
+  const date = value instanceof Date ? value : new Date(value);
+  return new Intl.DateTimeFormat('en-GB', {
+    dateStyle: 'medium',
+    timeZone: 'Europe/Helsinki',
+  }).format(date);
+};
+
 const emailService = {
   sendApplicationConfirmation: async (applicant) => {
     // Read env values at call time and normalize (strip surrounding quotes if present)
@@ -320,6 +328,80 @@ const emailService = {
       return true;
     } catch (error) {
       console.error('Brevo password reset email error:', error);
+      return null;
+    }
+  },
+  sendPaymentNotificationEmail: async (paymentData) => {
+    const { brevoApiKey, senderEmail, senderName, logoUrl } = getEmailBranding();
+
+    if (!brevoApiKey) {
+      console.warn('BREVO_API_KEY not set; skipping payment notification email');
+      return null;
+    }
+
+    const {
+      email,
+      fullName,
+      pickerId,
+      fromDate,
+      toDate,
+      incomeTotal,
+      expenseTotal,
+      paidAmount,
+      notes,
+    } = paymentData;
+
+    const formattedIncome = formatMoney(incomeTotal);
+    const formattedExpense = formatMoney(expenseTotal);
+    const formattedPaidAmount = formatMoney(paidAmount);
+
+    try {
+      const emailPayload = {
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email, name: fullName }],
+        subject: 'Your payout has been marked as paid',
+        htmlContent: `
+          <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+              <div style="max-width: 600px; margin: 0 auto;">
+                ${renderEmailHeader({ logoUrl, title: `Hi ${fullName},`, subtitle: 'Your earnings payout has been processed.' })}
+                <p>Your payout for the selected period has been marked as paid.</p>
+                <p><strong>Payment details:</strong></p>
+                <ul>
+                  <li>Picker ID: <strong>${pickerId}</strong></li>
+                  <li>Period: <strong>${formatDate(fromDate)} to ${formatDate(toDate)}</strong></li>
+                  <li>Income total: <strong>€${formattedIncome}</strong></li>
+                  <li>Expense total: <strong>€${formattedExpense}</strong></li>
+                  <li>Paid amount: <strong>€${formattedPaidAmount}</strong></li>
+                </ul>
+                ${notes ? `<p><strong>Note:</strong> ${notes}</p>` : ''}
+                <p>Thank you for your hard work.</p>
+                ${renderEmailFooter()}
+              </div>
+            </body>
+          </html>
+        `,
+      };
+
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': brevoApiKey,
+        },
+        body: JSON.stringify(emailPayload),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Brevo API error:', error);
+        return null;
+      }
+
+      console.log(`Payment notification email sent to ${email}`);
+      return true;
+    } catch (error) {
+      console.error('Brevo payment notification error:', error);
       return null;
     }
   },

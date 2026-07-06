@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import PasswordField from '../components/PasswordField.jsx';
-import { changeUserPassword, clearUserToken, fetchUserProfile, getGroupMembers, getIncomeHistory, getUserToken, updateUserBankDetails, updateUserPhone, userLogin } from '../lib/api.js';
+import { changeUserPassword, clearUserToken, fetchUserProfile, getExpenseHistory, getGroupMembers, getIncomeHistory, getUserToken, updateUserBankDetails, updateUserPhone, userLogin, getUserPaymentHistory } from '../lib/api.js';
 
 const initialLogin = { email: '', password: '' };
 const initialPassword = { currentPassword: '', newPassword: '', confirmPassword: '' };
+const expensePlanDescriptions = {
+  'own-car': 'includes trailer and accommodation',
+  'rented-car': 'includes trailer, accommodation, and car',
+};
 
 export default function UserPortalPage() {
   const [loginForm, setLoginForm] = useState(initialLogin);
@@ -34,6 +38,16 @@ export default function UserPortalPage() {
   const [incomePageSize, setIncomePageSize] = useState(10);
   const [incomeFilterForm, setIncomeFilterForm] = useState({ startDate: '', endDate: '' });
   const [appliedIncomeFilters, setAppliedIncomeFilters] = useState({ startDate: '', endDate: '' });
+  const [expenseRecords, setExpenseRecords] = useState(null);
+  const [expenseError, setExpenseError] = useState('');
+  const [expenseLoading, setExpenseLoading] = useState(false);
+  const [expensePage, setExpensePage] = useState(1);
+  const [expensePageSize, setExpensePageSize] = useState(10);
+  const [expenseFilterForm, setExpenseFilterForm] = useState({ startDate: '', endDate: '' });
+  const [appliedExpenseFilters, setAppliedExpenseFilters] = useState({ startDate: '', endDate: '' });
+  const [paymentRecords, setPaymentRecords] = useState([]);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
 
   const { section } = useParams();
 
@@ -44,6 +58,8 @@ export default function UserPortalPage() {
       { key: 'bank', label: 'Bank details' },
       { key: 'group', label: 'Group members' },
       { key: 'income', label: 'Income details' },
+      { key: 'expense', label: 'Expense details' },
+      { key: 'payments', label: 'Payment history' },
     ],
     []
   );
@@ -60,6 +76,7 @@ export default function UserPortalPage() {
     : 'EB';
   const bankActionRequired = !profile?.user?.bankName || !profile?.user?.bankAccountNumber;
   const incomeTotal = Number(incomeRecords?.totalIncome || 0);
+  const expenseTotal = Number(expenseRecords?.totalExpense || 0);
 
   const loadProfile = async () => {
     setProfileError('');
@@ -104,6 +121,23 @@ export default function UserPortalPage() {
     }
   };
 
+  const loadExpenseHistory = async (nextPage = expensePage, nextFilters = appliedExpenseFilters) => {
+    setExpenseError('');
+    setExpenseLoading(true);
+    try {
+      const response = await getExpenseHistory({
+        page: nextPage,
+        limit: expensePageSize,
+        ...nextFilters,
+      });
+      setExpenseRecords(response.data);
+    } catch (error) {
+      setExpenseError(error.message || 'Unable to load expense history');
+    } finally {
+      setExpenseLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (isAuthenticated) {
       loadProfile();
@@ -121,6 +155,35 @@ export default function UserPortalPage() {
       loadIncomeHistory();
     }
   }, [isAuthenticated, activeSection, incomePage, incomePageSize, appliedIncomeFilters]);
+
+  useEffect(() => {
+    if (isAuthenticated && activeSection === 'expense') {
+      loadExpenseHistory();
+    }
+  }, [isAuthenticated, activeSection, expensePage, expensePageSize, appliedExpenseFilters]);
+
+  useEffect(() => {
+    if (!isAuthenticated || activeSection !== 'payments') {
+      return;
+    }
+
+    const loadPaymentHistory = async () => {
+      setPaymentLoading(true);
+      setPaymentError('');
+
+      try {
+        const response = await getUserPaymentHistory();
+        setPaymentRecords(response.data?.paymentRecords || []);
+      } catch (error) {
+        setPaymentRecords([]);
+        setPaymentError(error.message || 'Unable to load payment history');
+      } finally {
+        setPaymentLoading(false);
+      }
+    };
+
+    loadPaymentHistory();
+  }, [isAuthenticated, activeSection]);
 
   const handleLoginSubmit = async event => {
     event.preventDefault();
@@ -231,6 +294,20 @@ export default function UserPortalPage() {
     setIncomePage(1);
   };
 
+  const handleExpenseFilterSubmit = async event => {
+    event.preventDefault();
+    const nextFilters = { ...expenseFilterForm };
+    setAppliedExpenseFilters(nextFilters);
+    setExpensePage(1);
+  };
+
+  const handleExpenseFilterReset = async () => {
+    const nextFilters = { startDate: '', endDate: '' };
+    setExpenseFilterForm(nextFilters);
+    setAppliedExpenseFilters(nextFilters);
+    setExpensePage(1);
+  };
+
   const closePhoneDialog = () => {
     setIsPhoneDialogOpen(false);
   };
@@ -241,6 +318,8 @@ export default function UserPortalPage() {
     setProfile(null);
     setLoginForm(initialLogin);
     setPasswordForm(initialPassword);
+    setExpenseRecords(null);
+    setPaymentRecords([]); // Reset payment records on logout
   };
 
   if (!isAuthenticated) {
@@ -254,7 +333,7 @@ export default function UserPortalPage() {
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 text-lg font-semibold">EB</div>
               <h2 className="mt-6 text-2xl font-semibold">Applicant Portal</h2>
               <p className="mt-2 text-sm text-white/80">
-                Sign in to review your application status, group ID, and contact details.
+                Sign in to review your application status, group name, and contact details.
               </p>
               <div className="mt-6 rounded-2xl bg-white/15 px-4 py-3 text-xs">
                 <p className="font-semibold">Secure access</p>
@@ -580,7 +659,7 @@ export default function UserPortalPage() {
                     <p className="mt-1 text-sm text-slate-500">Track your daily berry picking income and weight details.</p>
                   </div>
                   <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900">
-                    Total earned: <span className="text-forest-700">${incomeTotal.toFixed(2)}</span>
+                    Total earned: <span className="text-forest-700">€{incomeTotal.toFixed(2)}</span>
                   </div>
                 </div>
                 <form className="mt-4 grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:grid-cols-2" onSubmit={handleIncomeFilterSubmit}>
@@ -629,7 +708,7 @@ export default function UserPortalPage() {
                                 </div>
                                 <div className="text-right">
                                   <p className="text-xs uppercase tracking-wide text-slate-400">Income</p>
-                                  <p className="text-base font-semibold text-emerald-700">${record.calculatedIncome.toFixed(2)}</p>
+                                  <p className="text-base font-semibold text-emerald-700">€{record.calculatedIncome.toFixed(2)}</p>
                                 </div>
                               </div>
                               <dl className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-600">
@@ -639,7 +718,7 @@ export default function UserPortalPage() {
                                 </div>
                                 <div>
                                   <dt className="text-xs uppercase tracking-wide text-slate-400">Unit price</dt>
-                                  <dd className="font-medium text-slate-900">${Number(record.amount || 0).toFixed(2)}</dd>
+                                  <dd className="font-medium text-slate-900">€{Number(record.amount || 0).toFixed(2)}</dd>
                                 </div>
                                 <div>
                                   <dt className="text-xs uppercase tracking-wide text-slate-400">Berry wt</dt>
@@ -678,8 +757,8 @@ export default function UserPortalPage() {
                                   <td className="px-4 py-3 text-slate-600">{record.berryType || '—'}</td>
                                   <td className="px-4 py-3 text-right text-slate-600">{record.berryWeightKg}</td>
                                   <td className="px-4 py-3 text-right text-slate-600">{record.carrotWeightKg}</td>
-                                  <td className="px-4 py-3 text-right text-slate-600">${Number(record.amount || 0).toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-right font-semibold text-emerald-600">${record.calculatedIncome.toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-right text-slate-600">€{Number(record.amount || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-right font-semibold text-emerald-600">€{record.calculatedIncome.toFixed(2)}</td>
                                 </tr>
                               );
                             })}
@@ -710,12 +789,239 @@ export default function UserPortalPage() {
                         </div>
                       </div>
                       <div className="mt-4 rounded-2xl bg-forest-50 px-4 py-3 text-sm font-semibold text-slate-900">
-                        Total amount earned: <span className="text-forest-700">${incomeTotal.toFixed(2)}</span>
+                        Total amount earned: <span className="text-forest-700">€{incomeTotal.toFixed(2)}</span>
                       </div>
                     </div>
                   ) : (
                     <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">
                       {incomeLoading ? 'Loading income records...' : 'No income records yet. Daily tracking will appear here.'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeSection === 'expense' && (
+              <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold text-slate-900">Expense details</h3>
+                    <p className="mt-1 text-sm text-slate-500">Daily expense rows are generated from the active group or individual plan.</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900">
+                    Total expense: <span className="text-rose-700">€{expenseTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-slate-100 bg-forest-50 p-4 text-sm text-slate-700">
+                  <p className="font-semibold text-slate-900">Current daily plan</p>
+                  <p className="mt-1">
+                    {expenseRecords?.currentPlan
+                      ? `${expenseRecords.currentPlan.expenseType === 'own-car' ? 'Own car' : 'Rented car'} · €${Number(expenseRecords.currentPlan.dailyAmount || 0).toFixed(2)} / day · ${expensePlanDescriptions[expenseRecords.currentPlan.expenseType] || expensePlanDescriptions['own-car']}`
+                      : 'No active expense plan found yet.'}
+                  </p>
+                </div>
+
+                <form className="mt-4 grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:grid-cols-2" onSubmit={handleExpenseFilterSubmit}>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Start date
+                    <input
+                      className="input mt-2"
+                      type="date"
+                      value={expenseFilterForm.startDate}
+                      onChange={event => setExpenseFilterForm(current => ({ ...current, startDate: event.target.value }))}
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    End date
+                    <input
+                      className="input mt-2"
+                      type="date"
+                      value={expenseFilterForm.endDate}
+                      onChange={event => setExpenseFilterForm(current => ({ ...current, endDate: event.target.value }))}
+                    />
+                  </label>
+                  <div className="flex gap-2 sm:col-span-2">
+                    <button type="submit" className="rounded-full bg-forest-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-forest-800">
+                      Apply date filter
+                    </button>
+                    <button type="button" onClick={handleExpenseFilterReset} className="rounded-full border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+                      Reset
+                    </button>
+                  </div>
+                </form>
+
+                {expenseError ? <p className="mt-3 text-sm text-rose-600">{expenseError}</p> : null}
+
+                <div className="mt-5">
+                  {expenseRecords?.records && expenseRecords.records.length > 0 ? (
+                    <div>
+                      <div className="space-y-3 md:hidden">
+                        {expenseRecords.records.map(record => {
+                          const date = new Date(record.date);
+                          const formatted = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
+                          return (
+                            <article key={record._id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">{formatted}</p>
+                                  <p className="text-xs text-slate-500">{record.groupName || '—'}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-xs uppercase tracking-wide text-slate-400">Expense</p>
+                                  <p className="text-base font-semibold text-rose-700">€{Number(record.calculatedExpense || 0).toFixed(2)}</p>
+                                </div>
+                              </div>
+                              <dl className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-600">
+                                <div>
+                                  <dt className="text-xs uppercase tracking-wide text-slate-400">Plan</dt>
+                                  <dd className="font-medium text-slate-900">{record.expenseType === 'own-car' ? 'Own car' : 'Rented car'}</dd>
+                                </div>
+                                <div>
+                                  <dt className="text-xs uppercase tracking-wide text-slate-400">Daily rate</dt>
+                                  <dd className="font-medium text-slate-900">€{Number(record.dailyAmount || 0).toFixed(2)}</dd>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <dt className="text-xs uppercase tracking-wide text-slate-400">Includes</dt>
+                                  <dd className="font-medium text-slate-900">
+                                    {expensePlanDescriptions[record.expenseType] || expensePlanDescriptions['own-car']}
+                                  </dd>
+                                </div>
+                              </dl>
+                            </article>
+                          );
+                        })}
+                      </div>
+
+                      <div className="hidden md:block">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50">
+                              <th className="px-4 py-3 text-left font-semibold text-slate-900">Date</th>
+                              <th className="px-4 py-3 text-left font-semibold text-slate-900">Plan</th>
+                              <th className="px-4 py-3 text-left font-semibold text-slate-900">Group</th>
+                              <th className="px-4 py-3 text-right font-semibold text-slate-900">Daily rate</th>
+                              <th className="px-4 py-3 text-right font-semibold text-slate-900">Expense</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {expenseRecords.records.map(record => {
+                              const date = new Date(record.date);
+                              const formatted = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+                              return (
+                                <tr key={record._id} className="border-b border-slate-100 hover:bg-slate-50">
+                                  <td className="px-4 py-3 font-medium text-slate-900">{formatted}</td>
+                                  <td className="px-4 py-3 text-slate-600">{record.expenseType === 'own-car' ? 'Own car' : 'Rented car'}</td>
+                                  <td className="px-4 py-3 text-slate-600">{record.groupName || '—'}</td>
+                                  <td className="px-4 py-3 text-right text-slate-600">€{Number(record.dailyAmount || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-right font-semibold text-rose-600">€{Number(record.calculatedExpense || 0).toFixed(2)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-between">
+                        <p className="text-xs text-slate-500">
+                          Page {expenseRecords.page} of {expenseRecords.totalPages} ({expenseRecords.total} records)
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setExpensePage(p => Math.max(1, p - 1))}
+                            disabled={expensePage === 1 || expenseLoading}
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Previous
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setExpensePage(p => Math.min(expenseRecords.totalPages, p + 1))}
+                            disabled={expensePage === expenseRecords.totalPages || expenseLoading}
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 rounded-2xl bg-forest-50 px-4 py-3 text-sm font-semibold text-slate-900">
+                        Total expense: <span className="text-rose-700">€{expenseTotal.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">
+                      {expenseLoading ? 'Loading expense records...' : 'No expense records yet. Recurring daily expenses will appear here.'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeSection === 'payments' && (
+              <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold text-slate-900">Payment history</h3>
+                    <p className="mt-1 text-sm text-slate-500">Settlements that were marked as paid for your account.</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900">
+                    Total payments: <span className="text-forest-700">{paymentRecords.length}</span>
+                  </div>
+                </div>
+
+                {paymentError ? <p className="mt-3 text-sm text-rose-600">{paymentError}</p> : null}
+
+                <div className="mt-5">
+                  {paymentLoading ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">
+                      Loading payment history...
+                    </div>
+                  ) : paymentRecords.length > 0 ? (
+                    <div className="space-y-3">
+                      {paymentRecords.map(record => (
+                        <article key={record._id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">
+                                {new Date(record.fromDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                {' '}
+                                to
+                                {' '}
+                                {new Date(record.toDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Paid on {new Date(record.paidAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs uppercase tracking-wide text-slate-400">Paid amount</p>
+                              <p className="text-lg font-semibold text-forest-700">€{Number(record.paidAmount || 0).toFixed(2)}</p>
+                            </div>
+                          </div>
+                          <dl className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
+                            <div>
+                              <dt className="text-xs uppercase tracking-wide text-slate-400">Income total</dt>
+                              <dd className="mt-1 font-semibold text-slate-900">€{Number(record.incomeTotal || 0).toFixed(2)}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs uppercase tracking-wide text-slate-400">Expense total</dt>
+                              <dd className="mt-1 font-semibold text-slate-900">€{Number(record.expenseTotal || 0).toFixed(2)}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs uppercase tracking-wide text-slate-400">Status</dt>
+                              <dd className="mt-1 font-semibold capitalize text-forest-700">{record.status || 'paid'}</dd>
+                            </div>
+                          </dl>
+                          {record.notes ? <p className="mt-3 text-sm text-slate-600">Note: {record.notes}</p> : null}
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">
+                      No payment history yet.
                     </div>
                   )}
                 </div>

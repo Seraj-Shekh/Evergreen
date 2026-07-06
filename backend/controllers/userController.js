@@ -1,10 +1,14 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 import Applicant from '../models/Applicant.js';
 import UserAccount from '../models/UserAccount.js';
 import IncomeRecord from '../models/IncomeRecord.js';
+import ExpenseRecord from '../models/ExpenseRecord.js';
+import PaymentRecord from '../models/PaymentRecord.js';
 import { createUserToken } from '../services/userToken.js';
 import emailService from '../services/emailService.js';
+import { ensureExpenseRecordsForApplicant, getCurrentExpensePlanForApplicant } from '../services/expenseService.js';
 
 const sanitizeEmail = value => String(value || '').trim().toLowerCase();
 const normalizeGroupName = value => String(value || '').trim().replace(/\s+/g, ' ');
@@ -386,6 +390,107 @@ export const getIncomeHistory = async (req, res, next) => {
         totalPages: Math.max(1, Math.ceil(total / limitNum)),
         totalIncome: totalIncomeAggregate[0]?.totalIncome || 0,
       },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const getExpenseHistory = async (req, res, next) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const { startDate, endDate, limit = 50, page = 1 } = req.query;
+
+    const user = await UserAccount.findById(userId).lean();
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    await ensureExpenseRecordsForApplicant(user.applicantId, new Date());
+
+    const filter = { applicantId: user.applicantId };
+
+    if (startDate || endDate) {
+      filter.date = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        if (!Number.isNaN(start.getTime())) {
+          filter.date.$gte = start;
+        }
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        if (!Number.isNaN(end.getTime())) {
+          end.setHours(23, 59, 59, 999);
+          filter.date.$lte = end;
+        }
+      }
+      if (Object.keys(filter.date).length === 0) {
+        delete filter.date;
+      }
+    }
+
+    const pageNumber = Math.max(1, Number.parseInt(page, 10) || 1);
+    const pageLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 50));
+    const skip = (pageNumber - 1) * pageLimit;
+
+    const [records, total, totalAggregate, currentPlan] = await Promise.all([
+      ExpenseRecord.find(filter)
+        .sort({ date: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(pageLimit)
+        .lean(),
+      ExpenseRecord.countDocuments(filter),
+      ExpenseRecord.aggregate([
+        { $match: filter },
+        { $group: { _id: null, totalExpense: { $sum: '$calculatedExpense' } } },
+      ]),
+      getCurrentExpensePlanForApplicant(user.applicantId),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        records,
+        page: pageNumber,
+        limit: pageLimit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageLimit)),
+        totalExpense: totalAggregate[0]?.totalExpense || 0,
+        currentPlan,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const getPaymentHistory = async (req, res, next) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const user = await UserAccount.findById(userId).lean();
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const paymentRecords = await PaymentRecord.find({ applicantId: user.applicantId })
+      .sort({ paidAt: -1, createdAt: -1 })
+      .lean();
+
+    return res.json({
+      success: true,
+      data: { paymentRecords },
     });
   } catch (error) {
     return next(error);

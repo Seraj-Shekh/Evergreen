@@ -5,13 +5,17 @@ import { validationResult } from 'express-validator';
 import Applicant from '../models/Applicant.js';
 import UserAccount from '../models/UserAccount.js';
 import IncomeRecord from '../models/IncomeRecord.js';
+import ExpensePlan from '../models/ExpensePlan.js';
+import ExpenseRecord from '../models/ExpenseRecord.js';
 import { createAdminToken } from '../services/adminToken.js';
 import emailService from '../services/emailService.js';
+import { createPaymentRecord, getPaymentSummaryForApplicant, listPaymentRecordsForApplicant } from '../services/paymentService.js';
+import { buildExactGroupRegex, getExpenseTypeDefaults, normalizeGroupName, rebuildExpenseRecordsForPlan } from '../services/expenseService.js';
 
 const allowedStatuses = new Set(['pending', 'reviewed', 'selected', 'rejected']);
 
 const escapeRegex = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const normalizeGroupName = value => String(value || '').trim().replace(/\s+/g, ' ');
+const normalizeGroupNameLocal = value => String(value || '').trim().replace(/\s+/g, ' ');
 
 const parseBooleanFilter = value => {
   if (value === undefined || value === null || value === '') {
@@ -55,7 +59,7 @@ const buildApplicantFilter = query => {
   }
 
   if (query.groupName) {
-    const normalizedGroupName = normalizeGroupName(query.groupName);
+    const normalizedGroupName = normalizeGroupNameLocal(query.groupName);
 
     if (normalizedGroupName) {
       filter.groupName = {
@@ -382,7 +386,7 @@ export const createUserAccounts = async (req, res, next) => {
         }
 
         // Update applicant with group
-        applicant.groupName = normalizeGroupName(groupName);
+        applicant.groupName = normalizeGroupNameLocal(groupName);
         applicant.status = 'selected';
         await applicant.save();
 
@@ -451,6 +455,227 @@ export const createUserAccounts = async (req, res, next) => {
       success: true,
       message: 'User account creation completed',
       data: results,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const removeUserAccounts = async (req, res, next) => {
+  try {
+    const { applicantIds } = req.body;
+
+    if (!Array.isArray(applicantIds) || applicantIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'Applicant IDs array is required' });
+    }
+
+    const removalDate = new Date();
+    removalDate.setUTCHours(0, 0, 0, 0);
+
+    const results = {
+      removed: [],
+      errors: [],
+    };
+
+    for (const applicantId of applicantIds) {
+      try {
+        if (!mongoose.isValidObjectId(applicantId)) {
+          results.errors.push({ applicantId, error: 'Invalid applicant ID' });
+          continue;
+        }
+
+        const applicant = await Applicant.findById(applicantId);
+        if (!applicant) {
+          results.errors.push({ applicantId, error: 'Applicant not found' });
+          continue;
+        }
+
+        await ExpensePlan.updateMany(
+          { applicantId: applicant._id },
+          { $set: { isActive: false, endsOn: removalDate } }
+        );
+
+        await ExpenseRecord.deleteMany({
+          applicantId: applicant._id,
+          date: { $gte: removalDate },
+        });
+
+        await UserAccount.deleteOne({ applicantId: applicant._id });
+
+        applicant.groupName = '';
+        applicant.groupId = '';
+        applicant.status = 'reviewed';
+        await applicant.save();
+
+        results.removed.push({
+          applicantId,
+          email: applicant.email,
+          fullName: applicant.fullName,
+        });
+      } catch (itemErr) {
+        results.errors.push({
+          applicantId,
+          error: itemErr.message || 'Unknown error',
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Selected members removed from picking',
+      data: results,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const listExpensePlans = async (req, res, next) => {
+  try {
+    const filter = {};
+
+    if (req.query.scopeType && ['group', 'applicant'].includes(String(req.query.scopeType).trim())) {
+      filter.scopeType = String(req.query.scopeType).trim();
+    }
+
+    if (req.query.applicantId) {
+      filter.applicantId = String(req.query.applicantId).trim();
+    }
+
+    if (req.query.groupName) {
+      const groupRegex = buildExactGroupRegex(req.query.groupName);
+      if (groupRegex) {
+        filter.groupName = groupRegex;
+      }
+    }
+
+    const expensePlans = await ExpensePlan.find(filter)
+      .sort({ startsOn: -1, updatedAt: -1 })
+      .lean();
+
+    const applicantIds = expensePlans
+      .filter(plan => plan.scopeType === 'applicant' && plan.applicantId)
+      .map(plan => plan.applicantId);
+
+    const applicants = applicantIds.length
+      ? await Applicant.find({ _id: { $in: applicantIds } }).select('_id fullName email groupName').lean()
+      : [];
+
+    const applicantById = new Map(applicants.map(applicant => [String(applicant._id), applicant]));
+
+    return res.json({
+      success: true,
+      data: {
+        expensePlans: expensePlans.map(plan => ({
+          ...plan,
+          applicant: plan.scopeType === 'applicant' ? applicantById.get(String(plan.applicantId)) || null : null,
+          defaultDailyAmount: getExpenseTypeDefaults(plan.expenseType).dailyAmount,
+        })),
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const saveExpensePlan = async (req, res, next) => {
+  try {
+    const {
+      id,
+      scopeType,
+      applicantId,
+      groupName,
+      expenseType,
+      dailyAmount,
+      startsOn,
+      endsOn,
+      isActive,
+      notes,
+    } = req.body;
+
+    const nextScopeType = String(scopeType || '').trim();
+    const nextExpenseType = String(expenseType || '').trim();
+
+    if (!['group', 'applicant'].includes(nextScopeType)) {
+      return res.status(400).json({ success: false, message: 'scopeType must be group or applicant' });
+    }
+
+    if (!['own-car', 'rented-car'].includes(nextExpenseType)) {
+      return res.status(400).json({ success: false, message: 'expenseType must be own-car or rented-car' });
+    }
+
+    const parsedStart = new Date(startsOn);
+    if (Number.isNaN(parsedStart.getTime())) {
+      return res.status(400).json({ success: false, message: 'Valid startsOn date is required' });
+    }
+
+    const parsedEnd = endsOn ? new Date(endsOn) : null;
+    if (parsedEnd && Number.isNaN(parsedEnd.getTime())) {
+      return res.status(400).json({ success: false, message: 'Valid endsOn date is required' });
+    }
+
+    if (parsedEnd && parsedEnd < parsedStart) {
+      return res.status(400).json({ success: false, message: 'endsOn cannot be earlier than startsOn' });
+    }
+
+    const defaults = getExpenseTypeDefaults(nextExpenseType);
+    const parsedDailyAmount = Number(dailyAmount);
+    const nextDailyAmount = Number.isFinite(parsedDailyAmount) ? parsedDailyAmount : defaults.dailyAmount;
+
+    const payload = {
+      scopeType: nextScopeType,
+      expenseType: nextExpenseType,
+      dailyAmount: nextDailyAmount,
+      startsOn: parsedStart,
+      endsOn: parsedEnd,
+      isActive: isActive === undefined ? true : Boolean(isActive),
+      notes: String(notes || '').trim(),
+    };
+
+    if (nextScopeType === 'group') {
+      const nextGroupName = normalizeGroupName(groupName);
+      if (!nextGroupName) {
+        return res.status(400).json({ success: false, message: 'groupName is required for group scope' });
+      }
+      payload.groupName = nextGroupName;
+      payload.applicantId = null;
+    } else {
+      if (!mongoose.isValidObjectId(applicantId)) {
+        return res.status(400).json({ success: false, message: 'Valid applicantId is required for applicant scope' });
+      }
+
+      const applicant = await Applicant.findById(applicantId).select('_id groupName').lean();
+      if (!applicant) {
+        return res.status(404).json({ success: false, message: 'Applicant not found' });
+      }
+
+      payload.applicantId = applicant._id;
+      payload.groupName = normalizeGroupName(applicant.groupName);
+    }
+
+    let expensePlan;
+
+    if (id) {
+      if (!mongoose.isValidObjectId(id)) {
+        return res.status(400).json({ success: false, message: 'Valid plan id is required' });
+      }
+
+      expensePlan = await ExpensePlan.findByIdAndUpdate(id, payload, { new: true }).lean();
+      if (!expensePlan) {
+        return res.status(404).json({ success: false, message: 'Expense plan not found' });
+      }
+
+      expensePlan = await ExpensePlan.findById(id);
+      await rebuildExpenseRecordsForPlan(expensePlan);
+    } else {
+      expensePlan = await ExpensePlan.create(payload);
+      await rebuildExpenseRecordsForPlan(expensePlan);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Expense plan saved',
+      data: { expensePlan },
     });
   } catch (error) {
     return next(error);
@@ -629,6 +854,93 @@ export const listIncomeRecords = async (req, res, next) => {
       },
     });
   } catch (error) {
+    return next(error);
+  }
+};
+
+export const getPaymentPreview = async (req, res, next) => {
+  try {
+    const { applicantId, fromDate, toDate } = req.query;
+    const summary = await getPaymentSummaryForApplicant({ applicantId, fromDate, toDate });
+
+    return res.json({
+      success: true,
+      data: summary,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const listPaymentRecords = async (req, res, next) => {
+  try {
+    const { applicantId } = req.query;
+
+    if (!applicantId || !mongoose.isValidObjectId(applicantId)) {
+      return res.status(400).json({ success: false, message: 'Valid applicantId is required' });
+    }
+
+    const paymentRecords = await listPaymentRecordsForApplicant(applicantId);
+
+    return res.json({
+      success: true,
+      data: { paymentRecords },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const createPayment = async (req, res, next) => {
+  try {
+    const { applicantId, fromDate, toDate, paidAmount, notes } = req.body;
+
+    if (!applicantId || !mongoose.isValidObjectId(applicantId)) {
+      return res.status(400).json({ success: false, message: 'Valid applicantId is required' });
+    }
+
+    const paidBy = String(req.admin?.username || '').trim();
+    const { summary, paymentRecord } = await createPaymentRecord({
+      applicantId,
+      fromDate,
+      toDate,
+      paidAmount,
+      paidBy,
+      notes,
+    });
+
+    const userAccount = await UserAccount.findOne({ applicantId }).lean();
+    if (userAccount) {
+      try {
+        await emailService.sendPaymentNotificationEmail({
+          email: userAccount.email,
+          fullName: userAccount.fullName,
+          pickerId: userAccount.pickerId || '',
+          fromDate: paymentRecord.fromDate,
+          toDate: paymentRecord.toDate,
+          incomeTotal: paymentRecord.incomeTotal,
+          expenseTotal: paymentRecord.expenseTotal,
+          paidAmount: paymentRecord.paidAmount,
+          notes: paymentRecord.notes,
+        });
+      } catch (emailErr) {
+        console.warn(`Failed to send payment email to ${userAccount.email}:`, emailErr.message);
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Payment marked as paid',
+      data: {
+        paymentRecord,
+        summary,
+      },
+    });
+  } catch (error) {
+    if (String(error.message || '').toLowerCase().includes('duplicate key')) {
+      return res.status(409).json({ success: false, message: 'A payment already exists for this period' });
+    }
+
     return next(error);
   }
 };
