@@ -1,4 +1,7 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL
+  || (import.meta.env.PROD ? '' : 'http://localhost:5000')
+).replace(/\/$/, '');
 
 const ADMIN_TOKEN_KEY = 'evergreen_admin_token';
 const USER_TOKEN_KEY = 'evergreen_user_token';
