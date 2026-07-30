@@ -9,6 +9,7 @@ const expensePlanDescriptions = {
   'own-car': 'includes trailer and accommodation',
   'rented-car': 'includes trailer, accommodation, and car',
 };
+const supportWhatsAppUrl = 'https://wa.me/358449500808';
 
 export default function UserPortalPage() {
   const [loginForm, setLoginForm] = useState(initialLogin);
@@ -60,6 +61,7 @@ export default function UserPortalPage() {
       { key: 'income', label: 'Income details' },
       { key: 'expense', label: 'Expense details' },
       { key: 'payments', label: 'Payment history' },
+      { key: 'contact-support', label: 'Contact support' },
     ],
     []
   );
@@ -1024,6 +1026,36 @@ export default function UserPortalPage() {
                       No payment history yet.
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {activeSection === 'contact-support' && (
+              <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold text-slate-900">Contact support</h3>
+                    <p className="mt-1 text-sm text-slate-500">Open WhatsApp to chat with our support team.</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900">
+                    +358 44 950 0808
+                  </div>
+                </div>
+
+                <div className="mt-6 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-slate-700">
+                  <p className="font-semibold text-slate-900">Need help?</p>
+                  <p className="mt-1">Send a message on WhatsApp and include your name plus a short description of the issue.</p>
+                </div>
+
+                <div className="mt-6">
+                  <a
+                    href={supportWhatsAppUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex w-full items-center justify-center rounded-full bg-forest-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-forest-800 sm:w-auto"
+                  >
+                    Chat on WhatsApp
+                  </a>
                 </div>
               </div>
             )}
