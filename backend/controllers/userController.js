@@ -14,7 +14,41 @@ const sanitizeEmail = value => String(value || '').trim().toLowerCase();
 const normalizeGroupName = value => String(value || '').trim().replace(/\s+/g, ' ');
 const hashResetToken = token => crypto.createHash('sha256').update(String(token)).digest('hex');
 
-const getClientUrl = () => String(process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
+const normalizeBaseUrl = value => {
+  if (!value) return '';
+
+  const trimmed = String(value).trim();
+  if (!trimmed) return '';
+
+  return trimmed.replace(/\/$/, '');
+};
+
+export const getClientUrl = req => {
+  const candidates = [
+    req?.headers?.origin,
+    req?.headers?.referer && (() => {
+      try {
+        return new URL(req.headers.referer).origin;
+      } catch {
+        return '';
+      }
+    })(),
+    process.env.CLIENT_URL,
+    process.env.FRONTEND_URL,
+    process.env.VITE_APP_URL,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeBaseUrl(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return 'https://evergreen-harvest-berry.netlify.app';
+};
+
+export const buildResetPasswordUrl = (req, token) => `${getClientUrl(req)}/portal/reset-password?token=${encodeURIComponent(token)}`;
 
 export const loginUser = async (req, res, next) => {
   try {
@@ -72,7 +106,7 @@ export const requestPasswordReset = async (req, res, next) => {
       user.resetPasswordExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
       await user.save();
 
-      const resetUrl = `${getClientUrl()}/portal/reset-password?token=${encodeURIComponent(resetToken)}`;
+      const resetUrl = buildResetPasswordUrl(req, resetToken);
 
       try {
         await emailService.sendPasswordResetEmail({
