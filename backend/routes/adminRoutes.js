@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
-import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus, createUserAccounts, removeUserAccounts, addIncomeRecord, listIncomeRecords, listExpensePlans, saveExpensePlan, getPaymentPreview, listPaymentRecords, createPayment } from '../controllers/adminController.js';
+import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus, createUserAccounts, removeUserAccounts, addIncomeRecord, addIncomeRecordsBulk, listIncomeRecords, listExpensePlans, saveExpensePlan, getPaymentPreview, listPaymentRecords, createPayment } from '../controllers/adminController.js';
 import { requireAdminAuth } from '../middleware/adminAuth.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 
@@ -59,6 +59,16 @@ router.post(
   ],
   validateRequest,
   addIncomeRecord
+);
+
+router.post(
+  '/income/bulk',
+  [
+    body('applicantId').trim().notEmpty().withMessage('applicantId is required'),
+    body('records').isArray({ min: 1 }).withMessage('records must be a non-empty array'),
+  ],
+  validateRequest,
+  addIncomeRecordsBulk
 );
 
 router.get('/income', listIncomeRecords);

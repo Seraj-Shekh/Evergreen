@@ -7,6 +7,7 @@ import TermsPage from './pages/TermsPage.jsx';
 import SuccessPage from './pages/SuccessPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import AdminIncomePage from './pages/AdminIncomePage.jsx';
+import AdminIncomeRecordPage from './pages/AdminIncomeRecordPage.jsx';
 import AdminExpensePage from './pages/AdminExpensePage.jsx';
 import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx';
 import ResetPasswordPage from './pages/ResetPasswordPage.jsx';
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/admin/income" element={<AdminIncomePage />} />
+        <Route path="/admin/income-record" element={<AdminIncomeRecordPage />} />
         <Route path="/admin/expenses" element={<AdminExpensePage />} />
         <Route path="/portal" element={<UserPortalPage />} />
         <Route path="/portal/forgot-password" element={<ForgotPasswordPage />} />

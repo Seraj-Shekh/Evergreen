@@ -17,6 +17,30 @@ const allowedStatuses = new Set(['pending', 'reviewed', 'selected', 'rejected'])
 const escapeRegex = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const normalizeGroupNameLocal = value => String(value || '').trim().replace(/\s+/g, ' ');
 
+const normalizeIncomeDate = value => {
+  const text = String(value || '').trim();
+  if (!text) {
+    return null;
+  }
+
+  const dmY = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (dmY) {
+    const [, day, month, year] = dmY;
+    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const yMd = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (yMd) {
+    const [, year, month, day] = yMd;
+    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
 const parseBooleanFilter = value => {
   if (value === undefined || value === null || value === '') {
     return null;
@@ -789,6 +813,145 @@ export const addIncomeRecord = async (req, res, next) => {
     });
   } catch (error) {
     return next(error);
+  }
+};
+
+export const addIncomeRecordsBulk = async (req, res, next) => {
+  let session;
+
+  try {
+    const { applicantId, records } = req.body;
+
+    if (!applicantId || !records) {
+      return res.status(400).json({ success: false, message: 'applicantId and records are required' });
+    }
+
+    if (!mongoose.isValidObjectId(applicantId)) {
+      return res.status(400).json({ success: false, message: 'Invalid applicant ID' });
+    }
+
+    if (!Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ success: false, message: 'records must be a non-empty array' });
+    }
+
+    const applicant = await Applicant.findById(applicantId);
+    if (!applicant) {
+      return res.status(404).json({ success: false, message: 'Applicant not found' });
+    }
+
+    const normalizedRecords = records.map((record, index) => {
+      const rowNumber = index + 1;
+      const date = normalizeIncomeDate(record?.date);
+
+      if (!date) {
+        const error = new Error(`Row ${rowNumber}: invalid date`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const locationValue = String(record?.location || record?.place || '').trim();
+      if (!locationValue) {
+        const error = new Error(`Row ${rowNumber}: location is required`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const berryTypeValue = String(record?.berryType || '').trim();
+      if (!berryTypeValue) {
+        const error = new Error(`Row ${rowNumber}: berryType is required`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const berryWeight = Number(record?.berryWeightKg ?? record?.berryWt);
+      const carrotWeight = Number(record?.carrotWeightKg ?? record?.cartWt ?? record?.carrotWt);
+      const amountVal = Number(record?.amount ?? record?.rate);
+
+      if (Number.isNaN(berryWeight) || berryWeight < 0) {
+        const error = new Error(`Row ${rowNumber}: berryWeightKg must be a non-negative number`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      if (Number.isNaN(carrotWeight) || carrotWeight < 0) {
+        const error = new Error(`Row ${rowNumber}: carrotWeightKg must be a non-negative number`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      if (Number.isNaN(amountVal) || amountVal < 0) {
+        const error = new Error(`Row ${rowNumber}: amount must be a non-negative number`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      return {
+        date,
+        location: locationValue,
+        berryType: berryTypeValue,
+        berryWeightKg: berryWeight,
+        carrotWeightKg: carrotWeight,
+        amount: amountVal,
+        calculatedIncome: (berryWeight - carrotWeight) * amountVal,
+      };
+    });
+
+    session = await mongoose.startSession();
+    const savedRecords = [];
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    await session.withTransaction(async () => {
+      for (const record of normalizedRecords) {
+        let incomeRecord = await IncomeRecord.findOne({ applicantId, date: record.date }).session(session);
+
+        if (incomeRecord) {
+          incomeRecord.location = record.location;
+          incomeRecord.berryType = record.berryType;
+          incomeRecord.berryWeightKg = record.berryWeightKg;
+          incomeRecord.carrotWeightKg = record.carrotWeightKg;
+          incomeRecord.amount = record.amount;
+          incomeRecord.calculatedIncome = record.calculatedIncome;
+          await incomeRecord.save({ session });
+          updatedCount += 1;
+        } else {
+          incomeRecord = new IncomeRecord({
+            applicantId,
+            date: record.date,
+            location: record.location,
+            berryType: record.berryType,
+            berryWeightKg: record.berryWeightKg,
+            carrotWeightKg: record.carrotWeightKg,
+            amount: record.amount,
+            calculatedIncome: record.calculatedIncome,
+          });
+          await incomeRecord.save({ session });
+          createdCount += 1;
+        }
+
+        savedRecords.push(incomeRecord.toObject());
+      }
+    });
+
+    return res.json({
+      success: true,
+      message: 'Income records saved',
+      data: {
+        createdCount,
+        updatedCount,
+        incomeRecords: savedRecords,
+      },
+    });
+  } catch (error) {
+    if (error && error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+
+    return next(error);
+  } finally {
+    if (session) {
+      session.endSession();
+    }
   }
 };
 

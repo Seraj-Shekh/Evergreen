@@ -102,6 +102,13 @@ export const addAdminIncomeRecord = async payload =>
     body: JSON.stringify(payload),
   });
 
+export const addAdminIncomeRecordsBulk = async payload =>
+  request('/api/admin/income/bulk', {
+    method: 'POST',
+    headers: jsonHeaders(getAdminToken()),
+    body: JSON.stringify(payload),
+  });
+
 export const fetchAdminIncomeRecords = async (params = {}) => {
   const query = new URLSearchParams();
 

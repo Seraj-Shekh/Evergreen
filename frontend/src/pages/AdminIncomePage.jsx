@@ -28,6 +28,15 @@ const formatNumber = value => {
 
 const formatEuro = value => `€${formatNumber(value)}`;
 
+const toUtcDayKey = value => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())).toISOString().slice(0, 10);
+};
+
 export default function AdminIncomePage() {
   const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAdminToken()));
@@ -52,7 +61,28 @@ export default function AdminIncomePage() {
 
   const totalIncome = useMemo(() => Number(selectedApplicant?.totalIncome || 0), [selectedApplicant]);
   const incomeRecords = selectedApplicant?.incomeRecords || [];
-  const paymentTotal = useMemo(() => Number((paymentPreview?.netPayable ?? selectedApplicant?.totalIncome) || 0), [paymentPreview, selectedApplicant]);
+  const rangeIncomeTotal = useMemo(() => {
+    if (!paymentForm.fromDate || !paymentForm.toDate || !incomeRecords.length) {
+      return 0;
+    }
+
+    const fromKey = paymentForm.fromDate;
+    const toKey = paymentForm.toDate;
+
+    return incomeRecords.reduce((sum, record) => {
+      const recordKey = toUtcDayKey(record.date);
+      if (!recordKey || recordKey < fromKey || recordKey > toKey) {
+        return sum;
+      }
+
+      const value = Number(record.calculatedIncome || 0);
+      return sum + (Number.isFinite(value) ? value : 0);
+    }, 0);
+  }, [incomeRecords, paymentForm.fromDate, paymentForm.toDate]);
+
+  const paymentTotal = useMemo(() => Number((paymentPreview?.netPayable ?? rangeIncomeTotal ?? selectedApplicant?.totalIncome) || 0), [paymentPreview, rangeIncomeTotal, selectedApplicant]);
+
+  const hasPaymentRange = Boolean(paymentForm.fromDate && paymentForm.toDate);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -222,6 +252,14 @@ export default function AdminIncomePage() {
       setPaymentPreview(null);
     }
   }, [selectedApplicant?._id]);
+
+  useEffect(() => {
+    if (!selectedApplicant?._id || !hasPaymentRange) {
+      return;
+    }
+
+    loadPaymentPreview();
+  }, [selectedApplicant?._id, paymentForm.fromDate, paymentForm.toDate]);
 
   if (!isAuthenticated) {
     return (
@@ -495,7 +533,7 @@ export default function AdminIncomePage() {
                 <div className="grid gap-3 rounded-2xl bg-white p-4 shadow-sm sm:grid-cols-3">
                   <div>
                     <p className="text-xs uppercase tracking-wide text-slate-500">Income total</p>
-                    <p className="mt-1 font-semibold text-slate-900">{formatEuro(paymentPreview?.incomeTotal ?? totalIncome)}</p>
+                    <p className="mt-1 font-semibold text-slate-900">{formatEuro(paymentPreview?.incomeTotal ?? rangeIncomeTotal ?? totalIncome)}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-wide text-slate-500">Expense total</p>
@@ -503,7 +541,7 @@ export default function AdminIncomePage() {
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-wide text-slate-500">Net payable</p>
-                    <p className="mt-1 font-semibold text-forest-700">{formatEuro(paymentPreview?.netPayable ?? 0)}</p>
+                    <p className="mt-1 font-semibold text-forest-700">{formatEuro(paymentPreview?.netPayable ?? rangeIncomeTotal ?? totalIncome)}</p>
                   </div>
                 </div>
 
