@@ -12,9 +12,9 @@ import {
 
 const loginInitial = { username: '', password: '' };
 const searchInitial = { pickerId: '' };
-const berryTypeOptions = ['Blueberry', 'Cowberry', 'Cloudberry'];
+const berryTypeOptions = ['Blueberry', 'Cowberry', 'Cloudberry', 'Lingonberry'];
 const cartWeightStep = 1.06;
-const cartOptions = [0, 1, 2, 3, 4, 5];
+const cartOptions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 const parseDateInput = value => {
   const date = new Date(`${value}T00:00:00`);
