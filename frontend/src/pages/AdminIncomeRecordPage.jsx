@@ -5,7 +5,9 @@ import {
   addAdminIncomeRecordsBulk,
   adminLogin,
   clearAdminToken,
+  deleteAdminIncomeRecord,
   fetchApplicant,
+  fetchAdminIncomeRecords,
   fetchApplicants,
   getAdminToken,
 } from '../lib/api.js';
@@ -17,7 +19,12 @@ const cartWeightStep = 1.06;
 const cartOptions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 const parseDateInput = value => {
-  const date = new Date(`${value}T00:00:00`);
+  const text = String(value || '').trim();
+  if (!text) {
+    return null;
+  }
+
+  const date = text.includes('T') ? new Date(text) : new Date(`${text}T00:00:00`);
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
@@ -48,11 +55,11 @@ const createIncomeRow = (seed = {}) => ({
   date: seed.date || '',
   location: seed.location || 'Lieksa',
   berryType: seed.berryType || 'Blueberry',
-  berryWeightKg: '',
+  berryWeightKg: seed.berryWeightKg ?? '',
   carrotWeightKg: seed.carrotWeightKg || '0.00',
   cartMode: seed.cartMode || 'preset',
   cartCount: seed.cartCount ?? '0',
-  amount: '',
+  amount: seed.amount ?? '',
 });
 
 const formatNumber = value => {
@@ -61,6 +68,34 @@ const formatNumber = value => {
 };
 
 const formatEuro = value => `€${formatNumber(value)}`;
+const todayDate = formatDateInput(new Date());
+
+const formatDisplayDate = value => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+
+  return new Intl.DateTimeFormat('en-GB', {
+    dateStyle: 'medium',
+    timeZone: 'Europe/Helsinki',
+  }).format(date);
+};
+
+const getCartPresetFromWeight = weightValue => {
+  const weight = Number(weightValue);
+  if (!Number.isFinite(weight) || weight < 0) {
+    return { cartMode: 'custom', cartCount: 'custom' };
+  }
+
+  for (const count of cartOptions) {
+    if (Math.abs((count * cartWeightStep) - weight) < 0.005) {
+      return { cartMode: 'preset', cartCount: String(count) };
+    }
+  }
+
+  return { cartMode: 'custom', cartCount: 'custom' };
+};
 
 const calculateRowTotal = row => {
   const berryWeight = Number(row.berryWeightKg);
@@ -89,6 +124,10 @@ export default function AdminIncomeRecordPage() {
   const [selectedLoading, setSelectedLoading] = useState(false);
   const [selectedError, setSelectedError] = useState('');
   const [incomeRows, setIncomeRows] = useState([createIncomeRow()]);
+  const [existingRecords, setExistingRecords] = useState([]);
+  const [existingLoading, setExistingLoading] = useState(false);
+  const [deletingRecordId, setDeletingRecordId] = useState('');
+  const [existingError, setExistingError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState('');
@@ -144,8 +183,78 @@ export default function AdminIncomeRecordPage() {
     setSearchQuery('');
     setSearchError('');
     setIncomeRows([createIncomeRow()]);
+    setExistingRecords([]);
+    setExistingError('');
     setSaveError('');
     setSaveSuccess('');
+  };
+
+  const loadExistingRecords = async applicantId => {
+    if (!applicantId) {
+      setExistingRecords([]);
+      return;
+    }
+
+    setExistingLoading(true);
+    setExistingError('');
+
+    try {
+      const response = await fetchAdminIncomeRecords({ applicantId, page: 1, limit: 200 });
+      setExistingRecords(response.data?.records || []);
+    } catch (error) {
+      setExistingRecords([]);
+      setExistingError(error.message || 'Failed to load existing records');
+    } finally {
+      setExistingLoading(false);
+    }
+  };
+
+  const handleEditExistingRecord = record => {
+    const { cartMode, cartCount } = getCartPresetFromWeight(record.carrotWeightKg);
+
+    setIncomeRows([
+      createIncomeRow({
+        date: formatDateInput(new Date(record.date)),
+        location: record.location || 'Lieksa',
+        berryType: record.berryType || 'Blueberry',
+        carrotWeightKg: formatNumber(record.carrotWeightKg),
+        cartMode,
+        cartCount,
+        berryWeightKg: String(record.berryWeightKg ?? ''),
+        amount: String(record.amount ?? ''),
+      }),
+    ]);
+
+    setSaveError('');
+    setSaveSuccess(`Editing ${formatDisplayDate(record.date)} record. Update values and click Add all income records.`);
+  };
+
+  const handleDeleteExistingRecord = async record => {
+    if (!record?._id) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete income record for ${formatDisplayDate(record.date)}? This cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setExistingError('');
+    setSaveError('');
+    setSaveSuccess('');
+    setDeletingRecordId(record._id);
+
+    try {
+      await deleteAdminIncomeRecord(record._id);
+      setSaveSuccess(`Deleted income record for ${formatDisplayDate(record.date)}.`);
+      if (selectedApplicant?._id) {
+        await loadExistingRecords(selectedApplicant._id);
+      }
+    } catch (error) {
+      setExistingError(error.message || 'Failed to delete income record');
+    } finally {
+      setDeletingRecordId('');
+    }
   };
 
   const openApplicant = async applicant => {
@@ -156,6 +265,7 @@ export default function AdminIncomeRecordPage() {
       const response = await fetchApplicant(applicant._id);
       setSelectedApplicant(response.data.applicant);
       setIncomeRows([createIncomeRow()]);
+      await loadExistingRecords(response.data.applicant?._id || applicant._id);
       setSaveError('');
       setSaveSuccess('');
     } catch (error) {
@@ -172,6 +282,8 @@ export default function AdminIncomeRecordPage() {
     setSearchError('');
     setSelectedError('');
     setSelectedApplicant(null);
+    setExistingRecords([]);
+    setExistingError('');
 
     try {
       const response = await fetchApplicants({ pickerId: nextPickerId, limit: 20, page: 1, sortField: 'createdAt', sortDirection: 'desc' });
@@ -261,6 +373,7 @@ export default function AdminIncomeRecordPage() {
       const updatedCount = response.data?.updatedCount || 0;
       setSaveSuccess(`Saved ${createdCount} new and ${updatedCount} updated record(s).`);
       setIncomeRows([createIncomeRow()]);
+      await loadExistingRecords(selectedApplicant._id);
     } catch (error) {
       setSaveError(error.message || 'Failed to save income records');
     } finally {
@@ -373,6 +486,8 @@ export default function AdminIncomeRecordPage() {
                   setSaveError('');
                   setSaveSuccess('');
                   setIncomeRows([createIncomeRow()]);
+                  setExistingRecords([]);
+                  setExistingError('');
                 }}
                 className="rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
               >
@@ -459,6 +574,7 @@ export default function AdminIncomeRecordPage() {
                         <input
                           className="input mt-2"
                           type="date"
+                          max={todayDate}
                           value={row.date}
                           onChange={event => handleFieldChange(row.id, 'date', event.target.value)}
                         />
@@ -569,6 +685,74 @@ export default function AdminIncomeRecordPage() {
 
               {saveError ? <p className="text-sm text-rose-600">{saveError}</p> : null}
               {saveSuccess ? <p className="text-sm text-emerald-600">{saveSuccess}</p> : null}
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">Existing income records</h3>
+                    <p className="text-sm text-slate-500">Use Edit to load a record into the form and update it.</p>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{existingRecords.length}</span>
+                </div>
+
+                {existingLoading ? <p className="mt-3 text-sm text-slate-600">Loading records…</p> : null}
+                {existingError ? <p className="mt-3 text-sm text-rose-600">{existingError}</p> : null}
+
+                {!existingLoading && existingRecords.length > 0 ? (
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                      <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">Date</th>
+                          <th className="px-3 py-2 font-semibold">Location</th>
+                          <th className="px-3 py-2 font-semibold">Berry</th>
+                          <th className="px-3 py-2 font-semibold">Berry wt</th>
+                          <th className="px-3 py-2 font-semibold">Cart wt</th>
+                          <th className="px-3 py-2 font-semibold">Amount</th>
+                          <th className="px-3 py-2 font-semibold">Income</th>
+                          <th className="px-3 py-2 font-semibold">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {existingRecords.map(record => (
+                          <tr key={record._id}>
+                            <td className="px-3 py-2 text-slate-700">{formatDisplayDate(record.date)}</td>
+                            <td className="px-3 py-2 text-slate-700">{record.location || '—'}</td>
+                            <td className="px-3 py-2 text-slate-700">{record.berryType || '—'}</td>
+                            <td className="px-3 py-2 text-slate-700">{formatNumber(record.berryWeightKg)}</td>
+                            <td className="px-3 py-2 text-slate-700">{formatNumber(record.carrotWeightKg)}</td>
+                            <td className="px-3 py-2 text-slate-700">{formatEuro(record.amount)}</td>
+                            <td className="px-3 py-2 font-semibold text-forest-700">{formatEuro(record.calculatedIncome)}</td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditExistingRecord(record)}
+                                  className="rounded-full border border-forest-200 bg-white px-3 py-1.5 text-xs font-semibold text-forest-700 transition hover:bg-forest-50"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteExistingRecord(record)}
+                                  disabled={deletingRecordId === record._id}
+                                  className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {deletingRecordId === record._id ? 'Deleting…' : 'Delete'}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {!existingLoading && existingRecords.length === 0 ? (
+                  <p className="mt-3 text-sm text-slate-500">No existing income records found for this applicant.</p>
+                ) : null}
+              </div>
             </div>
           ) : (
             <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">

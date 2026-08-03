@@ -109,6 +109,12 @@ export const addAdminIncomeRecordsBulk = async payload =>
     body: JSON.stringify(payload),
   });
 
+export const deleteAdminIncomeRecord = async id =>
+  request(`/api/admin/income/${id}`, {
+    method: 'DELETE',
+    headers: jsonHeaders(getAdminToken()),
+  });
+
 export const fetchAdminIncomeRecords = async (params = {}) => {
   const query = new URLSearchParams();
 

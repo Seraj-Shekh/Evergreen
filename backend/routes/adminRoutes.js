@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
-import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus, createUserAccounts, removeUserAccounts, addIncomeRecord, addIncomeRecordsBulk, listIncomeRecords, listExpensePlans, saveExpensePlan, getPaymentPreview, listPaymentRecords, createPayment } from '../controllers/adminController.js';
+import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus, createUserAccounts, removeUserAccounts, addIncomeRecord, addIncomeRecordsBulk, deleteIncomeRecord, listIncomeRecords, listExpensePlans, saveExpensePlan, getPaymentPreview, listPaymentRecords, createPayment } from '../controllers/adminController.js';
 import { requireAdminAuth } from '../middleware/adminAuth.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 
@@ -72,6 +72,7 @@ router.post(
 );
 
 router.get('/income', listIncomeRecords);
+router.delete('/income/:id', deleteIncomeRecord);
 
 router.get('/payments/preview', getPaymentPreview);
 router.get('/payments', listPaymentRecords);

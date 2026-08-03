@@ -38,7 +38,25 @@ const normalizeIncomeDate = value => {
   }
 
   const date = new Date(text);
-  return Number.isNaN(date.getTime()) ? null : date;
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  date.setUTCHours(0, 0, 0, 0);
+  return date;
+};
+
+const getUtcDayBounds = value => {
+  const dayStart = value instanceof Date ? new Date(value) : normalizeIncomeDate(value);
+  if (!dayStart) {
+    return null;
+  }
+
+  dayStart.setUTCHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setUTCHours(23, 59, 59, 999);
+
+  return { dayStart, dayEnd };
 };
 
 const parseBooleanFilter = value => {
@@ -755,15 +773,15 @@ export const addIncomeRecord = async (req, res, next) => {
     // Calculate income: (berry - carrot) * amount
     const calculatedIncome = (berryWeight - carrotWeight) * amountVal;
 
-    const recordDate = new Date(date);
-    if (Number.isNaN(recordDate.getTime())) {
+    const dayBounds = getUtcDayBounds(date);
+    if (!dayBounds) {
       return res.status(400).json({ success: false, message: 'Invalid date format' });
     }
 
-    // Set time to start of day
-    recordDate.setUTCHours(0, 0, 0, 0);
-
-    let incomeRecord = await IncomeRecord.findOne({ applicantId, date: recordDate });
+    let incomeRecord = await IncomeRecord.findOne({
+      applicantId,
+      date: { $gte: dayBounds.dayStart, $lte: dayBounds.dayEnd },
+    });
 
     if (incomeRecord) {
       incomeRecord.location = locationValue;
@@ -776,7 +794,7 @@ export const addIncomeRecord = async (req, res, next) => {
     } else {
       incomeRecord = new IncomeRecord({
         applicantId,
-        date: recordDate,
+        date: dayBounds.dayStart,
         location: locationValue,
         berryType: berryTypeValue,
         berryWeightKg: berryWeight,
@@ -841,9 +859,9 @@ export const addIncomeRecordsBulk = async (req, res, next) => {
 
     const normalizedRecords = records.map((record, index) => {
       const rowNumber = index + 1;
-      const date = normalizeIncomeDate(record?.date);
+      const dayBounds = getUtcDayBounds(record?.date);
 
-      if (!date) {
+      if (!dayBounds) {
         const error = new Error(`Row ${rowNumber}: invalid date`);
         error.statusCode = 400;
         throw error;
@@ -886,7 +904,8 @@ export const addIncomeRecordsBulk = async (req, res, next) => {
       }
 
       return {
-        date,
+        date: dayBounds.dayStart,
+        dayEnd: dayBounds.dayEnd,
         location: locationValue,
         berryType: berryTypeValue,
         berryWeightKg: berryWeight,
@@ -903,7 +922,10 @@ export const addIncomeRecordsBulk = async (req, res, next) => {
 
     await session.withTransaction(async () => {
       for (const record of normalizedRecords) {
-        let incomeRecord = await IncomeRecord.findOne({ applicantId, date: record.date }).session(session);
+        let incomeRecord = await IncomeRecord.findOne({
+          applicantId,
+          date: { $gte: record.date, $lte: record.dayEnd },
+        }).session(session);
 
         if (incomeRecord) {
           incomeRecord.location = record.location;
@@ -952,6 +974,30 @@ export const addIncomeRecordsBulk = async (req, res, next) => {
     if (session) {
       session.endSession();
     }
+  }
+};
+
+export const deleteIncomeRecord = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Valid income record id is required' });
+    }
+
+    const incomeRecord = await IncomeRecord.findByIdAndDelete(id).lean();
+
+    if (!incomeRecord) {
+      return res.status(404).json({ success: false, message: 'Income record not found' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Income record deleted',
+      data: { incomeRecord },
+    });
+  } catch (error) {
+    return next(error);
   }
 };
 
