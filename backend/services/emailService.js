@@ -62,6 +62,14 @@ const formatDate = value => {
   }).format(date);
 };
 
+const formatDateOnlyUtc = value => {
+  const date = value instanceof Date ? value : new Date(value);
+  return new Intl.DateTimeFormat('en-GB', {
+    dateStyle: 'medium',
+    timeZone: 'UTC',
+  }).format(date);
+};
+
 const emailService = {
   sendApplicationConfirmation: async (applicant) => {
     // Read env values at call time and normalize (strip surrounding quotes if present)
@@ -214,6 +222,7 @@ const emailService = {
       email,
       fullName,
       pickerId,
+      date,
       location,
       berryType,
       berryWeightKg,
@@ -222,6 +231,7 @@ const emailService = {
       calculatedIncome,
     } = incomeData;
 
+    const formattedDate = date ? formatDate(date) : 'N/A';
     const formattedUnitPrice = formatMoney(amount);
     const formattedTotalIncome = formatMoney(calculatedIncome);
 
@@ -238,6 +248,7 @@ const emailService = {
                 <p>The following records has been added to your income details.</p>
                 <p><strong>Record details:</strong></p>
                 <ul>
+                  <li>Date: <strong>${formattedDate}</strong></li>
                   <li>Picker ID: <strong>${pickerId}</strong></li>
                   <li>Location: <strong>${location}</strong></li>
                   <li>Berry type: <strong>${berryType}</strong></li>
@@ -369,7 +380,7 @@ const emailService = {
                 <p><strong>Payment details:</strong></p>
                 <ul>
                   <li>Picker ID: <strong>${pickerId}</strong></li>
-                  <li>Period: <strong>${formatDate(fromDate)} to ${formatDate(toDate)}</strong></li>
+                  <li>Period: <strong>${formatDateOnlyUtc(fromDate)} to ${formatDateOnlyUtc(toDate)}</strong></li>
                   <li>Income total: <strong>€${formattedIncome}</strong></li>
                   <li>Expense total: <strong>€${formattedExpense}</strong></li>
                   <li>Paid amount: <strong>€${formattedPaidAmount}</strong></li>

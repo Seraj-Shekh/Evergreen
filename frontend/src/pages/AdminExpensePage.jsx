@@ -4,6 +4,7 @@ import PasswordField from '../components/PasswordField.jsx';
 import {
   adminLogin,
   clearAdminToken,
+  deleteAdminExpensePlan,
   fetchAdminExpensePlans,
   fetchApplicants,
   getAdminToken,
@@ -290,6 +291,38 @@ export default function AdminExpensePage() {
     }
   };
 
+  const handleDeletePlan = async plan => {
+    const confirmed = window.confirm(`Delete this expense plan and its related expense records?\n\n${plan.scopeType === 'group' ? `Group: ${plan.groupName}` : `Applicant: ${plan.applicant?.fullName || plan.applicantId}`}`);
+    if (!confirmed) {
+      return;
+    }
+
+    setSaving(true);
+    setPlanError('');
+    setPlanSuccess('');
+
+    try {
+      const response = await deleteAdminExpensePlan(plan._id);
+      const deletedCount = response.data?.deletedExpenseRecords || 0;
+      setPlanSuccess(`Expense plan deleted${deletedCount ? ` and ${deletedCount} related expense record${deletedCount === 1 ? '' : 's'} removed` : ''}`);
+
+      if (planForm.id === plan._id) {
+        setPlanForm(current => ({
+          ...current,
+          id: '',
+          endsOn: '',
+          notes: '',
+        }));
+      }
+
+      await loadExpenseData();
+    } catch (error) {
+      setPlanError(error.message || 'Failed to delete expense plan');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!isAuthenticated) {
     return (
       <section className="mx-auto flex min-h-[70vh] max-w-7xl items-center px-4 py-16 sm:px-6 lg:px-8">
@@ -508,6 +541,9 @@ export default function AdminExpensePage() {
                           Stop today
                         </button>
                       ) : null}
+                      <button type="button" onClick={() => handleDeletePlan(plan)} className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">
+                        Delete
+                      </button>
                     </div>
                   </div>
                 </div>

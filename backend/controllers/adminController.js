@@ -5,12 +5,13 @@ import { validationResult } from 'express-validator';
 import Applicant from '../models/Applicant.js';
 import UserAccount from '../models/UserAccount.js';
 import IncomeRecord from '../models/IncomeRecord.js';
+import PaymentRecord from '../models/PaymentRecord.js';
 import ExpensePlan from '../models/ExpensePlan.js';
 import ExpenseRecord from '../models/ExpenseRecord.js';
 import { createAdminToken } from '../services/adminToken.js';
 import emailService from '../services/emailService.js';
-import { createPaymentRecord, getPaymentSummaryForApplicant, listPaymentRecordsForApplicant } from '../services/paymentService.js';
-import { buildExactGroupRegex, getExpenseTypeDefaults, normalizeGroupName, rebuildExpenseRecordsForPlan } from '../services/expenseService.js';
+import { createPaymentRecord, getPaymentSummaryForApplicant } from '../services/paymentService.js';
+import { buildExactGroupRegex, getExpenseTypeDefaults, normalizeGroupName, rebuildExpenseRecordsForPlan, ensureExpenseRecordsForApplicant, getCurrentExpensePlanForApplicant } from '../services/expenseService.js';
 
 const allowedStatuses = new Set(['pending', 'reviewed', 'selected', 'rejected']);
 
@@ -331,10 +332,23 @@ export const getApplicantById = async (req, res, next) => {
       .sort({ date: -1, createdAt: -1 })
       .lean();
 
+    await ensureExpenseRecordsForApplicant(id, new Date());
+
+    const expenseRecords = await ExpenseRecord.find({ applicantId: id })
+      .sort({ date: -1, createdAt: -1 })
+      .lean();
+
     const totalIncomeAggregate = await IncomeRecord.aggregate([
       { $match: { applicantId: new mongoose.Types.ObjectId(id) } },
       { $group: { _id: null, totalIncome: { $sum: '$calculatedIncome' } } },
     ]);
+
+    const totalExpenseAggregate = await ExpenseRecord.aggregate([
+      { $match: { applicantId: new mongoose.Types.ObjectId(id) } },
+      { $group: { _id: null, totalExpense: { $sum: '$calculatedExpense' } } },
+    ]);
+
+    const currentExpensePlan = await getCurrentExpensePlanForApplicant(id);
 
     return res.json({
       success: true,
@@ -345,7 +359,10 @@ export const getApplicantById = async (req, res, next) => {
           bankName: enrichedApplicant?.bankName || userAccount?.bankName || '',
           bankAccountNumber: enrichedApplicant?.bankAccountNumber || userAccount?.bankAccountNumber || '',
           incomeRecords,
+          expenseRecords,
           totalIncome: totalIncomeAggregate[0]?.totalIncome || 0,
+          totalExpense: totalExpenseAggregate[0]?.totalExpense || 0,
+          currentExpensePlan,
         },
       },
     });
@@ -724,6 +741,35 @@ export const saveExpensePlan = async (req, res, next) => {
   }
 };
 
+export const deleteExpensePlan = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Valid plan id is required' });
+    }
+
+    const expensePlan = await ExpensePlan.findById(id).lean();
+    if (!expensePlan) {
+      return res.status(404).json({ success: false, message: 'Expense plan not found' });
+    }
+
+    const deletedRecords = await ExpenseRecord.deleteMany({ planId: expensePlan._id });
+    await ExpensePlan.deleteOne({ _id: expensePlan._id });
+
+    return res.json({
+      success: true,
+      message: 'Expense plan deleted',
+      data: {
+        expensePlanId: String(expensePlan._id),
+        deletedExpenseRecords: deletedRecords.deletedCount || 0,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export const addIncomeRecord = async (req, res, next) => {
   try {
     const { applicantId, date, location, berryType, berryWeightKg, carrotWeightKg, amount } = req.body;
@@ -812,6 +858,7 @@ export const addIncomeRecord = async (req, res, next) => {
           email: userAccount.email,
           fullName: userAccount.fullName,
           pickerId: userAccount.pickerId || '',
+          date: dayBounds.dayStart,
           location: locationValue,
           berryType: berryTypeValue,
           berryWeightKg: berryWeight,
@@ -856,6 +903,8 @@ export const addIncomeRecordsBulk = async (req, res, next) => {
     if (!applicant) {
       return res.status(404).json({ success: false, message: 'Applicant not found' });
     }
+
+    const bulkUserAccount = await UserAccount.findOne({ applicantId }).lean();
 
     const normalizedRecords = records.map((record, index) => {
       const rowNumber = index + 1;
@@ -954,6 +1003,27 @@ export const addIncomeRecordsBulk = async (req, res, next) => {
         savedRecords.push(incomeRecord.toObject());
       }
     });
+
+    if (bulkUserAccount) {
+      for (const incomeRecord of savedRecords) {
+        try {
+          await emailService.sendIncomeEntryEmail({
+            email: bulkUserAccount.email,
+            fullName: bulkUserAccount.fullName,
+            pickerId: bulkUserAccount.pickerId || '',
+            date: incomeRecord.date,
+            location: incomeRecord.location,
+            berryType: incomeRecord.berryType,
+            berryWeightKg: incomeRecord.berryWeightKg,
+            carrotWeightKg: incomeRecord.carrotWeightKg,
+            amount: incomeRecord.amount,
+            calculatedIncome: incomeRecord.calculatedIncome,
+          });
+        } catch (emailErr) {
+          console.warn(`Failed to send income email to ${bulkUserAccount.email}:`, emailErr.message);
+        }
+      }
+    }
 
     return res.json({
       success: true,
@@ -1067,6 +1137,80 @@ export const listIncomeRecords = async (req, res, next) => {
   }
 };
 
+export const getTopPickers = async (req, res, next) => {
+  try {
+    const requestedLimit = Number(req.query.limit);
+    const hasLimit = Number.isFinite(requestedLimit) && requestedLimit > 0;
+    const limitNum = hasLimit ? Math.max(1, Math.min(requestedLimit, 200)) : null;
+    const todayEnd = new Date();
+    todayEnd.setUTCHours(23, 59, 59, 999);
+
+    const leaderboard = await IncomeRecord.aggregate([
+      {
+        $match: {
+          date: { $lte: todayEnd },
+        },
+      },
+      {
+        $group: {
+          _id: '$applicantId',
+          recordCount: { $sum: 1 },
+          totalBerryWeightKg: { $sum: '$berryWeightKg' },
+          totalCartWeightKg: { $sum: '$carrotWeightKg' },
+          totalIncome: { $sum: '$calculatedIncome' },
+        },
+      },
+      {
+        $addFields: {
+          netBerryWeightKg: { $subtract: ['$totalBerryWeightKg', '$totalCartWeightKg'] },
+        },
+      },
+      {
+        $sort: { netBerryWeightKg: -1, totalBerryWeightKg: -1, recordCount: -1 },
+      },
+      ...(limitNum ? [{ $limit: limitNum }] : []),
+    ]);
+
+    const applicantIds = leaderboard.map(entry => entry._id).filter(Boolean);
+    const [applicants, userAccounts] = await Promise.all([
+      applicantIds.length ? Applicant.find({ _id: { $in: applicantIds } }).select('_id fullName groupName').lean() : [],
+      applicantIds.length ? UserAccount.find({ applicantId: { $in: applicantIds } }).select('applicantId pickerId').lean() : [],
+    ]);
+
+    const applicantById = new Map(applicants.map(applicant => [String(applicant._id), applicant]));
+    const pickerIdByApplicantId = new Map(userAccounts.map(account => [String(account.applicantId), account.pickerId || '']));
+
+    const topPickers = leaderboard.map((entry, index) => {
+      const applicant = applicantById.get(String(entry._id));
+      return {
+        rank: index + 1,
+        applicantId: String(entry._id),
+        fullName: applicant?.fullName || 'Unknown picker',
+        pickerId: pickerIdByApplicantId.get(String(entry._id)) || '',
+        groupName: applicant?.groupName || '',
+        recordCount: entry.recordCount || 0,
+        totalBerryWeightKg: Number(entry.totalBerryWeightKg || 0),
+        totalCartWeightKg: Number(entry.totalCartWeightKg || 0),
+        netBerryWeightKg: Number(entry.netBerryWeightKg || 0),
+        totalIncome: Number(entry.totalIncome || 0),
+      };
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        topPickers,
+        summary: {
+          count: topPickers.length,
+          totalNetBerryWeightKg: topPickers.reduce((sum, picker) => sum + picker.netBerryWeightKg, 0),
+        },
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export const getPaymentPreview = async (req, res, next) => {
   try {
     const { applicantId, fromDate, toDate } = req.query;
@@ -1085,15 +1229,54 @@ export const listPaymentRecords = async (req, res, next) => {
   try {
     const { applicantId } = req.query;
 
-    if (!applicantId || !mongoose.isValidObjectId(applicantId)) {
-      return res.status(400).json({ success: false, message: 'Valid applicantId is required' });
+    const filter = {};
+    if (applicantId) {
+      if (!mongoose.isValidObjectId(applicantId)) {
+        return res.status(400).json({ success: false, message: 'Valid applicantId is required' });
+      }
+
+      filter.applicantId = applicantId;
     }
 
-    const paymentRecords = await listPaymentRecordsForApplicant(applicantId);
+    const paymentRecords = await PaymentRecord.find(filter)
+      .populate('applicantId', 'fullName email pickerId groupName')
+      .sort({ paidAt: -1, createdAt: -1 })
+      .lean();
+
+    const applicantObjectIds = [...new Set(paymentRecords
+      .map(record => String(record?.applicantId?._id || record?.applicantId || ''))
+      .filter(Boolean))];
+
+    const userAccounts = applicantObjectIds.length > 0
+      ? await UserAccount.find({ applicantId: { $in: applicantObjectIds } })
+        .select('applicantId pickerId')
+        .lean()
+      : [];
+
+    const pickerIdByApplicantId = new Map(
+      userAccounts.map(account => [String(account.applicantId), account.pickerId || ''])
+    );
+
+    const enrichedPaymentRecords = paymentRecords.map(record => ({
+      ...record,
+      pickerId: pickerIdByApplicantId.get(String(record?.applicantId?._id || record?.applicantId || '')) || record?.applicantId?.pickerId || '',
+    }));
+
+    const summary = enrichedPaymentRecords.reduce((accumulator, record) => {
+      const paidAmount = Number(record.paidAmount || 0);
+      const incomeTotal = Number(record.incomeTotal || 0);
+      const expenseTotal = Number(record.expenseTotal || 0);
+
+      accumulator.count += 1;
+      accumulator.paidAmount += Number.isFinite(paidAmount) ? paidAmount : 0;
+      accumulator.incomeTotal += Number.isFinite(incomeTotal) ? incomeTotal : 0;
+      accumulator.expenseTotal += Number.isFinite(expenseTotal) ? expenseTotal : 0;
+      return accumulator;
+    }, { count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0 });
 
     return res.json({
       success: true,
-      data: { paymentRecords },
+      data: { paymentRecords: enrichedPaymentRecords, summary },
     });
   } catch (error) {
     return next(error);

@@ -385,6 +385,12 @@ export default function AdminPage() {
         <Link to="/admin/income-record" className="rounded-full border border-forest-200 px-3 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50 sm:px-4">
           Income record
         </Link>
+        <Link to="/admin/payment-record" className="rounded-full border border-forest-200 px-3 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50 sm:px-4">
+          Payment record
+        </Link>
+        <Link to="/admin/top-pickers" className="rounded-full border border-forest-200 px-3 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50 sm:px-4">
+          Top Pickers
+        </Link>
         <Link to="/admin/expenses" className="rounded-full border border-forest-200 px-3 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50 sm:px-4">
           Expense manager
         </Link>

@@ -10,6 +10,10 @@ const expensePlanDescriptions = {
   'rented-car': 'includes trailer, accommodation, and car',
 };
 const supportWhatsAppUrl = 'https://wa.me/358449500808';
+const formatDateOnlyUtc = value => new Intl.DateTimeFormat('en-GB', {
+  dateStyle: 'medium',
+  timeZone: 'UTC',
+}).format(new Date(value));
 
 export default function UserPortalPage() {
   const [loginForm, setLoginForm] = useState(initialLogin);
@@ -988,11 +992,11 @@ export default function UserPortalPage() {
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
                               <p className="text-sm font-semibold text-slate-900">
-                                {new Date(record.fromDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                {formatDateOnlyUtc(record.fromDate)}
                                 {' '}
                                 to
                                 {' '}
-                                {new Date(record.toDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                {formatDateOnlyUtc(record.toDate)}
                               </p>
                               <p className="mt-1 text-xs text-slate-500">
                                 Paid on {new Date(record.paidAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}

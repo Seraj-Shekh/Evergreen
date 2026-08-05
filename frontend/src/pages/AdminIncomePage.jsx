@@ -21,6 +21,11 @@ const formatDate = value => new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Helsinki',
 }).format(new Date(value));
 
+const formatDateOnlyUtc = value => new Intl.DateTimeFormat('en-GB', {
+  dateStyle: 'medium',
+  timeZone: 'UTC',
+}).format(new Date(value));
+
 const formatNumber = value => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed.toFixed(2) : String(value || '0');
@@ -61,6 +66,7 @@ export default function AdminIncomePage() {
 
   const totalIncome = useMemo(() => Number(selectedApplicant?.totalIncome || 0), [selectedApplicant]);
   const incomeRecords = selectedApplicant?.incomeRecords || [];
+  const expenseRecords = selectedApplicant?.expenseRecords || [];
   const rangeIncomeTotal = useMemo(() => {
     if (!paymentForm.fromDate || !paymentForm.toDate || !incomeRecords.length) {
       return 0;
@@ -81,6 +87,7 @@ export default function AdminIncomePage() {
   }, [incomeRecords, paymentForm.fromDate, paymentForm.toDate]);
 
   const paymentTotal = useMemo(() => Number((paymentPreview?.netPayable ?? rangeIncomeTotal ?? selectedApplicant?.totalIncome) || 0), [paymentPreview, rangeIncomeTotal, selectedApplicant]);
+  const expenseTotalDisplay = useMemo(() => Number(selectedApplicant?.totalExpense || 0), [selectedApplicant]);
 
   const hasPaymentRange = Boolean(paymentForm.fromDate && paymentForm.toDate);
 
@@ -476,6 +483,47 @@ export default function AdminIncomePage() {
                 </div>
               </div>
 
+              <div className="overflow-hidden rounded-2xl border border-slate-200">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">Expense history</h3>
+                    <p className="text-sm text-slate-500">Recurring expense records for the selected picker.</p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-4 py-2 text-right shadow-sm">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Total expense</p>
+                    <p className="text-lg font-semibold text-rose-700">{formatEuro(expenseTotalDisplay)}</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Date</th>
+                        <th className="px-4 py-3 font-semibold">Plan</th>
+                        <th className="px-4 py-3 font-semibold">Group</th>
+                        <th className="px-4 py-3 font-semibold">Daily rate</th>
+                        <th className="px-4 py-3 font-semibold">Expense</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {expenseRecords.length > 0 ? expenseRecords.map(record => (
+                        <tr key={record._id} className="hover:bg-slate-50/70">
+                          <td className="px-4 py-3 text-slate-700">{record.date ? formatDate(record.date) : '—'}</td>
+                          <td className="px-4 py-3 text-slate-700">{record.expenseType === 'own-car' ? 'Own car' : 'Rented car'}</td>
+                          <td className="px-4 py-3 text-slate-700">{record.groupName || '—'}</td>
+                          <td className="px-4 py-3 text-slate-700">{formatEuro(record.dailyAmount)}</td>
+                          <td className="px-4 py-3 font-semibold text-rose-700">{formatEuro(record.calculatedExpense)}</td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td className="px-4 py-8 text-center text-slate-500" colSpan="5">No expense history found for this person.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
               <form className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4" onSubmit={handleMarkAsPaid}>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -590,7 +638,7 @@ export default function AdminIncomePage() {
                       {paymentHistory.length > 0 ? paymentHistory.map(record => (
                         <tr key={record._id}>
                           <td className="px-4 py-3 text-slate-700">
-                            {record.fromDate ? formatDate(record.fromDate) : '—'} → {record.toDate ? formatDate(record.toDate) : '—'}
+                            {record.fromDate ? formatDateOnlyUtc(record.fromDate) : '—'} → {record.toDate ? formatDateOnlyUtc(record.toDate) : '—'}
                           </td>
                           <td className="px-4 py-3 text-slate-700">{formatEuro(record.incomeTotal)}</td>
                           <td className="px-4 py-3 text-slate-700">{formatEuro(record.expenseTotal)}</td>

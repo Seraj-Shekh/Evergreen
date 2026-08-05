@@ -129,6 +129,20 @@ export const fetchAdminIncomeRecords = async (params = {}) => {
   });
 };
 
+export const fetchAdminTopPickers = async (params = {}) => {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  return request(`/api/admin/top-pickers${query.toString() ? `?${query.toString()}` : ''}`, {
+    headers: jsonHeaders(getAdminToken()),
+  });
+};
+
 export const fetchAdminExpensePlans = async (params = {}) => {
   const query = new URLSearchParams();
 
@@ -148,6 +162,12 @@ export const saveAdminExpensePlan = async payload =>
     method: payload?.id ? 'PATCH' : 'POST',
     headers: jsonHeaders(getAdminToken()),
     body: JSON.stringify(payload),
+  });
+
+export const deleteAdminExpensePlan = async id =>
+  request(`/api/admin/expense-plans/${id}`, {
+    method: 'DELETE',
+    headers: jsonHeaders(getAdminToken()),
   });
 
 export const fetchAdminPaymentPreview = async params => {
