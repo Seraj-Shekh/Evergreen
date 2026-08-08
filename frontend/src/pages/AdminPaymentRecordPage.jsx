@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import * as XLSX from 'xlsx';
 import PasswordField from '../components/PasswordField.jsx';
 import { adminLogin, clearAdminToken, fetchAdminPaymentRecords, getAdminToken } from '../lib/api.js';
 
@@ -41,6 +42,27 @@ const getApplicant = record => {
     groupName: applicant.groupName || '—',
   };
 };
+
+const buildPaymentExportRows = records => records.map(record => {
+  const applicant = getApplicant(record);
+
+  return {
+    'Paid at': record.paidAt ? formatDateTime(record.paidAt) : '—',
+    Applicant: applicant.fullName,
+    Email: applicant.email,
+    'Picker ID': applicant.pickerId,
+    Group: applicant.groupName,
+    Period: `${record.fromDate ? formatDateOnlyUtc(record.fromDate) : '—'} → ${record.toDate ? formatDateOnlyUtc(record.toDate) : '—'}`,
+    Income: formatEuro(record.incomeTotal),
+    Expense: formatEuro(record.expenseTotal),
+    Fine: formatEuro(record.fineTotal),
+    'Net payable': formatEuro(record.netPayable),
+    'Paid amount': formatEuro(record.paidAmount),
+    'Paid by': record.paidBy || '—',
+    Notes: record.notes || '—',
+    Status: record.status || '—',
+  };
+});
 
 export default function AdminPaymentRecordPage() {
   const navigate = useNavigate();
@@ -149,6 +171,54 @@ export default function AdminPaymentRecordPage() {
     accumulator.netPayable += Number.isFinite(netPayable) ? netPayable : 0;
     return accumulator;
   }, { count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 }), [filteredRecords]);
+
+  const handleExportExcel = () => {
+    if (!filteredRecords.length) {
+      setError('No payment records to export');
+      return;
+    }
+
+    try {
+      const rows = buildPaymentExportRows(filteredRecords);
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      worksheet['!cols'] = [
+        { wch: 20 },
+        { wch: 24 },
+        { wch: 30 },
+        { wch: 14 },
+        { wch: 18 },
+        { wch: 28 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 18 },
+        { wch: 24 },
+        { wch: 12 },
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Payment Records');
+
+      const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+      anchor.href = url;
+      anchor.download = `payment-records-${stamp}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (exportError) {
+      setError(exportError.message || 'Failed to export payment records');
+    }
+  };
 
   if (!isAuthenticated) {
     return (
@@ -264,15 +334,25 @@ export default function AdminPaymentRecordPage() {
             <h2 className="text-lg font-semibold text-slate-900">Filters</h2>
             <p className="text-sm text-slate-500">Filter the payment list by name, picker ID, group, or note text. Showing {filteredRecords.length} of {summary.count} loaded records.</p>
           </div>
-          <label className="block text-sm font-medium text-slate-700 sm:min-w-[320px]">
-            Search
-            <input
-              className="input mt-2"
-              value={search}
-              onChange={event => setSearch(event.target.value)}
-              placeholder="Search name, picker ID, period, notes, or paid by"
-            />
-          </label>
+          <div className="flex flex-col gap-3 sm:min-w-[320px] sm:items-end">
+            <label className="block text-sm font-medium text-slate-700 sm:w-[320px]">
+              Search
+              <input
+                className="input mt-2"
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                placeholder="Search name, picker ID, period, notes, or paid by"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={loading || !filteredRecords.length}
+              className="inline-flex items-center justify-center rounded-full bg-forest-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-forest-800 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              Download Excel
+            </button>
+          </div>
         </div>
 
         {error ? <p className="mt-4 text-sm text-rose-600">{error}</p> : null}
