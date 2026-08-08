@@ -51,6 +51,14 @@ const apiLimiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path === '/admin/login' || req.path === '/users/login',
+});
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 app.use(helmet());
@@ -75,6 +83,8 @@ app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use(mongoSanitize());
 app.use(sanitizeRequest);
 app.use(hpp());
+app.use('/api/admin/login', loginLimiter);
+app.use('/api/users/login', loginLimiter);
 app.use('/api', apiLimiter);
 
 app.use('/', healthRoutes);
