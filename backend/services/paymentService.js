@@ -3,6 +3,7 @@ import Applicant from '../models/Applicant.js';
 import IncomeRecord from '../models/IncomeRecord.js';
 import ExpenseRecord from '../models/ExpenseRecord.js';
 import PaymentRecord from '../models/PaymentRecord.js';
+import { getFineSummaryForApplicant } from './fineService.js';
 import { ensureExpenseRecordsForApplicant } from './expenseService.js';
 
 const toUtcDate = value => {
@@ -70,7 +71,7 @@ export const getPaymentSummaryForApplicant = async ({ applicantId, fromDate, toD
     toDate: normalizedToDate,
   });
 
-  const [incomeRecords, expenseRecords, incomeAggregate, expenseAggregate] = await Promise.all([
+  const [incomeRecords, expenseRecords, incomeAggregate, expenseAggregate, fineSummary] = await Promise.all([
     IncomeRecord.find(filter).sort({ date: 1, createdAt: 1 }).lean(),
     ExpenseRecord.find(filter).sort({ date: 1, createdAt: 1 }).lean(),
     IncomeRecord.aggregate([
@@ -81,10 +82,12 @@ export const getPaymentSummaryForApplicant = async ({ applicantId, fromDate, toD
       { $match: filter },
       { $group: { _id: null, totalExpense: { $sum: '$calculatedExpense' } } },
     ]),
+    getFineSummaryForApplicant({ applicantId, fromDate: normalizedFromDate, toDate: normalizedToDate }),
   ]);
 
   const incomeTotal = incomeAggregate[0]?.totalIncome || 0;
   const expenseTotal = expenseAggregate[0]?.totalExpense || 0;
+  const fineTotal = fineSummary?.fineTotal || 0;
 
   return {
     applicant,
@@ -92,9 +95,11 @@ export const getPaymentSummaryForApplicant = async ({ applicantId, fromDate, toD
     toDate: normalizedToDate,
     incomeRecords,
     expenseRecords,
+    fineRecords: fineSummary?.fineRecords || [],
     incomeTotal,
     expenseTotal,
-    netPayable: incomeTotal - expenseTotal,
+    fineTotal,
+    netPayable: incomeTotal - expenseTotal - fineTotal,
   };
 };
 
@@ -122,6 +127,7 @@ export const createPaymentRecord = async ({ applicantId, fromDate, toDate, paidA
     toDate: summary.toDate || new Date(),
     incomeTotal: summary.incomeTotal,
     expenseTotal: summary.expenseTotal,
+    fineTotal: summary.fineTotal,
     netPayable: summary.netPayable,
     paidAmount: resolvedPaidAmount,
     paidBy: String(paidBy || '').trim(),

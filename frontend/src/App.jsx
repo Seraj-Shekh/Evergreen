@@ -8,6 +8,7 @@ import SuccessPage from './pages/SuccessPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import AdminIncomePage from './pages/AdminIncomePage.jsx';
 import AdminIncomeRecordPage from './pages/AdminIncomeRecordPage.jsx';
+import AdminFinePage from './pages/AdminFinePage.jsx';
 import AdminExpensePage from './pages/AdminExpensePage.jsx';
 import AdminPaymentRecordPage from './pages/AdminPaymentRecordPage.jsx';
 import AdminTopPickersPage from './pages/AdminTopPickersPage.jsx';
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/admin/income" element={<AdminIncomePage />} />
         <Route path="/admin/income-record" element={<AdminIncomeRecordPage />} />
+        <Route path="/admin/fines" element={<AdminFinePage />} />
         <Route path="/admin/expenses" element={<AdminExpensePage />} />
         <Route path="/admin/payment-record" element={<AdminPaymentRecordPage />} />
         <Route path="/admin/top-pickers" element={<AdminTopPickersPage />} />

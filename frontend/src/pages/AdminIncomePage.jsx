@@ -67,6 +67,9 @@ export default function AdminIncomePage() {
   const totalIncome = useMemo(() => Number(selectedApplicant?.totalIncome || 0), [selectedApplicant]);
   const incomeRecords = selectedApplicant?.incomeRecords || [];
   const expenseRecords = selectedApplicant?.expenseRecords || [];
+  const fineRecords = selectedApplicant?.fineRecords || [];
+  const totalFine = useMemo(() => Number(selectedApplicant?.totalFine || 0), [selectedApplicant]);
+  const expenseTotalDisplay = useMemo(() => Number(selectedApplicant?.totalExpense || 0), [selectedApplicant]);
   const rangeIncomeTotal = useMemo(() => {
     if (!paymentForm.fromDate || !paymentForm.toDate || !incomeRecords.length) {
       return 0;
@@ -86,8 +89,8 @@ export default function AdminIncomePage() {
     }, 0);
   }, [incomeRecords, paymentForm.fromDate, paymentForm.toDate]);
 
-  const paymentTotal = useMemo(() => Number((paymentPreview?.netPayable ?? rangeIncomeTotal ?? selectedApplicant?.totalIncome) || 0), [paymentPreview, rangeIncomeTotal, selectedApplicant]);
-  const expenseTotalDisplay = useMemo(() => Number(selectedApplicant?.totalExpense || 0), [selectedApplicant]);
+  const paymentTotal = useMemo(() => Number((paymentPreview?.netPayable ?? (rangeIncomeTotal ?? totalIncome) - (paymentPreview?.expenseTotal ?? expenseTotalDisplay) - (paymentPreview?.fineTotal ?? totalFine)) || 0), [paymentPreview, rangeIncomeTotal, totalIncome, expenseTotalDisplay, totalFine]);
+  const paymentPreviewReady = Boolean(paymentPreview);
 
   const hasPaymentRange = Boolean(paymentForm.fromDate && paymentForm.toDate);
 
@@ -524,6 +527,47 @@ export default function AdminIncomePage() {
                 </div>
               </div>
 
+              <div className="overflow-hidden rounded-2xl border border-slate-200">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">Fine history</h3>
+                    <p className="text-sm text-slate-500">Fines deducted separately from the payout settlement.</p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-4 py-2 text-right shadow-sm">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Total fine</p>
+                    <p className="text-lg font-semibold text-rose-700">{formatEuro(fineRecords.reduce((sum, record) => sum + Number(record.netAmount || 0), 0))}</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Date</th>
+                        <th className="px-4 py-3 font-semibold">Reason</th>
+                        <th className="px-4 py-3 font-semibold">Amount</th>
+                        <th className="px-4 py-3 font-semibold">VAT</th>
+                        <th className="px-4 py-3 font-semibold">Net</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {fineRecords.length > 0 ? fineRecords.map(record => (
+                        <tr key={record._id}>
+                          <td className="px-4 py-3 text-slate-700">{record.date ? formatDateOnlyUtc(record.date) : '—'}</td>
+                          <td className="px-4 py-3 text-slate-700">{record.reason || '—'}</td>
+                          <td className="px-4 py-3 text-slate-700">{formatEuro(record.amount)}</td>
+                          <td className="px-4 py-3 text-slate-700">{formatEuro(record.vatAmount)}</td>
+                          <td className="px-4 py-3 font-semibold text-rose-700">{formatEuro(record.netAmount)}</td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td className="px-4 py-6 text-center text-slate-500" colSpan="5">No fine records found for this picker.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
               <form className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4" onSubmit={handleMarkAsPaid}>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -532,7 +576,7 @@ export default function AdminIncomePage() {
                   </div>
                   <div className="rounded-2xl bg-white px-4 py-3 text-right shadow-sm">
                     <p className="text-xs uppercase tracking-wide text-slate-500">Preview net payable</p>
-                    <p className="text-lg font-semibold text-forest-700">{formatEuro(paymentTotal)}</p>
+                    <p className="text-lg font-semibold text-forest-700">{paymentPreviewReady ? formatEuro(paymentTotal) : '—'}</p>
                   </div>
                 </div>
 
@@ -581,15 +625,19 @@ export default function AdminIncomePage() {
                 <div className="grid gap-3 rounded-2xl bg-white p-4 shadow-sm sm:grid-cols-3">
                   <div>
                     <p className="text-xs uppercase tracking-wide text-slate-500">Income total</p>
-                    <p className="mt-1 font-semibold text-slate-900">{formatEuro(paymentPreview?.incomeTotal ?? rangeIncomeTotal ?? totalIncome)}</p>
+                    <p className="mt-1 font-semibold text-slate-900">{paymentPreviewReady ? formatEuro(paymentPreview?.incomeTotal ?? 0) : '—'}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-wide text-slate-500">Expense total</p>
-                    <p className="mt-1 font-semibold text-slate-900">{formatEuro(paymentPreview?.expenseTotal ?? 0)}</p>
+                    <p className="mt-1 font-semibold text-slate-900">{paymentPreviewReady ? formatEuro(paymentPreview?.expenseTotal ?? 0) : '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Fine total</p>
+                    <p className="mt-1 font-semibold text-slate-900">{paymentPreviewReady ? formatEuro(paymentPreview?.fineTotal ?? 0) : '—'}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-wide text-slate-500">Net payable</p>
-                    <p className="mt-1 font-semibold text-forest-700">{formatEuro(paymentPreview?.netPayable ?? rangeIncomeTotal ?? totalIncome)}</p>
+                    <p className="mt-1 font-semibold text-forest-700">{paymentPreviewReady ? formatEuro(paymentPreview?.netPayable ?? 0) : '—'}</p>
                   </div>
                 </div>
 
@@ -630,6 +678,8 @@ export default function AdminIncomePage() {
                         <th className="px-4 py-3 font-semibold">Period</th>
                         <th className="px-4 py-3 font-semibold">Income</th>
                         <th className="px-4 py-3 font-semibold">Expense</th>
+                        <th className="px-4 py-3 font-semibold">Fine</th>
+                        <th className="px-4 py-3 font-semibold">Net payable</th>
                         <th className="px-4 py-3 font-semibold">Paid amount</th>
                         <th className="px-4 py-3 font-semibold">Paid at</th>
                       </tr>
@@ -642,12 +692,14 @@ export default function AdminIncomePage() {
                           </td>
                           <td className="px-4 py-3 text-slate-700">{formatEuro(record.incomeTotal)}</td>
                           <td className="px-4 py-3 text-slate-700">{formatEuro(record.expenseTotal)}</td>
+                          <td className="px-4 py-3 text-slate-700">{formatEuro(record.fineTotal || 0)}</td>
+                          <td className="px-4 py-3 font-semibold text-forest-700">{formatEuro(record.netPayable)}</td>
                           <td className="px-4 py-3 font-semibold text-forest-700">{formatEuro(record.paidAmount)}</td>
                           <td className="px-4 py-3 text-slate-700">{record.paidAt ? formatDate(record.paidAt) : '—'}</td>
                         </tr>
                       )) : (
                         <tr>
-                          <td className="px-4 py-6 text-center text-slate-500" colSpan="5">No payment history yet.</td>
+                          <td className="px-4 py-6 text-center text-slate-500" colSpan="7">No payment history yet.</td>
                         </tr>
                       )}
                     </tbody>

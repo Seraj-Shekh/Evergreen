@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import { validateRequest } from '../middleware/validateRequest.js';
-import { loginUser, getCurrentUser, changePassword, updatePhoneNumber, updateBankDetails, getGroupMembers, getIncomeHistory, getExpenseHistory, getPaymentHistory, requestPasswordReset, resetPassword } from '../controllers/userController.js';
+import { loginUser, getCurrentUser, changePassword, updatePhoneNumber, updateBankDetails, getGroupMembers, getIncomeHistory, getExpenseHistory, getPaymentHistory, getFineHistory, downloadFineAttachment, requestPasswordReset, resetPassword } from '../controllers/userController.js';
 import { requireUserAuth } from '../middleware/userAuth.js';
 
 const router = Router();
@@ -71,5 +71,9 @@ router.get('/income', getIncomeHistory);
 router.get('/expenses', getExpenseHistory);
 
 router.get('/payments', getPaymentHistory);
+
+router.get('/fines', getFineHistory);
+
+router.get('/fines/:id/attachment', downloadFineAttachment);
 
 export default router;

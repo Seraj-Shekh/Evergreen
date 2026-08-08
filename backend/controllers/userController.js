@@ -6,9 +6,11 @@ import UserAccount from '../models/UserAccount.js';
 import IncomeRecord from '../models/IncomeRecord.js';
 import ExpenseRecord from '../models/ExpenseRecord.js';
 import PaymentRecord from '../models/PaymentRecord.js';
+import FineRecord from '../models/FineRecord.js';
 import { createUserToken } from '../services/userToken.js';
 import emailService from '../services/emailService.js';
 import { ensureExpenseRecordsForApplicant, getCurrentExpensePlanForApplicant } from '../services/expenseService.js';
+import { getAttachmentBuffer, serializeFineRecords } from '../services/fineService.js';
 
 const sanitizeEmail = value => String(value || '').trim().toLowerCase();
 const normalizeGroupName = value => String(value || '').trim().replace(/\s+/g, ' ');
@@ -526,6 +528,86 @@ export const getPaymentHistory = async (req, res, next) => {
       success: true,
       data: { paymentRecords },
     });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const getFineHistory = async (req, res, next) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const user = await UserAccount.findById(userId).lean();
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const fineRecords = await FineRecord.find({ applicantId: user.applicantId })
+      .sort({ date: -1, createdAt: -1 })
+      .lean();
+
+    const summary = fineRecords.reduce((accumulator, record) => {
+      const sourceAmount = Number(record.sourceAmount || 0);
+      const sourceVatAmount = Number(record.sourceVatAmount || 0);
+      const sourceNetAmount = Number(record.sourceNetAmount || 0);
+      const amount = Number(record.amount || 0);
+      const vatAmount = Number(record.vatAmount || 0);
+      const netAmount = Number(record.netAmount || 0);
+
+      accumulator.count += 1;
+      accumulator.sourceAmount += Number.isFinite(sourceAmount) ? sourceAmount : 0;
+      accumulator.sourceVatAmount += Number.isFinite(sourceVatAmount) ? sourceVatAmount : 0;
+      accumulator.sourceNetAmount += Number.isFinite(sourceNetAmount) ? sourceNetAmount : 0;
+      accumulator.amount += Number.isFinite(amount) ? amount : 0;
+      accumulator.vatAmount += Number.isFinite(vatAmount) ? vatAmount : 0;
+      accumulator.netAmount += Number.isFinite(netAmount) ? netAmount : 0;
+      return accumulator;
+    }, { count: 0, sourceAmount: 0, sourceVatAmount: 0, sourceNetAmount: 0, amount: 0, vatAmount: 0, netAmount: 0 });
+
+    return res.json({
+      success: true,
+      data: {
+        fineRecords: serializeFineRecords(fineRecords),
+        summary,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const downloadFineAttachment = async (req, res, next) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const user = await UserAccount.findById(userId).select('applicantId').lean();
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const fineRecord = await FineRecord.findOne({ _id: req.params.id, applicantId: user.applicantId }).lean();
+    if (!fineRecord || !fineRecord.attachment) {
+      return res.status(404).json({ success: false, message: 'Attachment not found' });
+    }
+
+    const fileBuffer = getAttachmentBuffer(fineRecord.attachment);
+    if (!fileBuffer) {
+      return res.status(404).json({ success: false, message: 'Attachment not found' });
+    }
+
+    const fileName = String(fineRecord.attachment.filename || 'attachment').replace(/[\r\n"]+/g, '_');
+    res.setHeader('Content-Type', fineRecord.attachment.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', String(fileBuffer.length));
+    return res.send(fileBuffer);
   } catch (error) {
     return next(error);
   }

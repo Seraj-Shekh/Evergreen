@@ -8,10 +8,20 @@ import IncomeRecord from '../models/IncomeRecord.js';
 import PaymentRecord from '../models/PaymentRecord.js';
 import ExpensePlan from '../models/ExpensePlan.js';
 import ExpenseRecord from '../models/ExpenseRecord.js';
+import FineRecord from '../models/FineRecord.js';
 import { createAdminToken } from '../services/adminToken.js';
 import emailService from '../services/emailService.js';
 import { createPaymentRecord, getPaymentSummaryForApplicant } from '../services/paymentService.js';
 import { buildExactGroupRegex, getExpenseTypeDefaults, normalizeGroupName, rebuildExpenseRecordsForPlan, ensureExpenseRecordsForApplicant, getCurrentExpensePlanForApplicant } from '../services/expenseService.js';
+import {
+  createFineRecordsForApplicants,
+  deleteFineRecordById,
+  getAttachmentBuffer,
+  getFineSummaryForApplicant,
+  listFineRecordsForAdmin,
+  serializeFineRecords,
+  updateFineRecordById,
+} from '../services/fineService.js';
 
 const allowedStatuses = new Set(['pending', 'reviewed', 'selected', 'rejected']);
 
@@ -338,6 +348,8 @@ export const getApplicantById = async (req, res, next) => {
       .sort({ date: -1, createdAt: -1 })
       .lean();
 
+    const fineSummary = await getFineSummaryForApplicant({ applicantId: id });
+
     const totalIncomeAggregate = await IncomeRecord.aggregate([
       { $match: { applicantId: new mongoose.Types.ObjectId(id) } },
       { $group: { _id: null, totalIncome: { $sum: '$calculatedIncome' } } },
@@ -346,6 +358,11 @@ export const getApplicantById = async (req, res, next) => {
     const totalExpenseAggregate = await ExpenseRecord.aggregate([
       { $match: { applicantId: new mongoose.Types.ObjectId(id) } },
       { $group: { _id: null, totalExpense: { $sum: '$calculatedExpense' } } },
+    ]);
+
+    const totalFineAggregate = await FineRecord.aggregate([
+      { $match: { applicantId: new mongoose.Types.ObjectId(id) } },
+      { $group: { _id: null, totalFine: { $sum: '$netAmount' } } },
     ]);
 
     const currentExpensePlan = await getCurrentExpensePlanForApplicant(id);
@@ -360,8 +377,10 @@ export const getApplicantById = async (req, res, next) => {
           bankAccountNumber: enrichedApplicant?.bankAccountNumber || userAccount?.bankAccountNumber || '',
           incomeRecords,
           expenseRecords,
+          fineRecords: serializeFineRecords(fineSummary.fineRecords || []),
           totalIncome: totalIncomeAggregate[0]?.totalIncome || 0,
           totalExpense: totalExpenseAggregate[0]?.totalExpense || 0,
+          totalFine: totalFineAggregate[0]?.totalFine || 0,
           currentExpensePlan,
         },
       },
@@ -1266,13 +1285,17 @@ export const listPaymentRecords = async (req, res, next) => {
       const paidAmount = Number(record.paidAmount || 0);
       const incomeTotal = Number(record.incomeTotal || 0);
       const expenseTotal = Number(record.expenseTotal || 0);
+      const fineTotal = Number(record.fineTotal || 0);
+      const netPayable = Number(record.netPayable || 0);
 
       accumulator.count += 1;
       accumulator.paidAmount += Number.isFinite(paidAmount) ? paidAmount : 0;
       accumulator.incomeTotal += Number.isFinite(incomeTotal) ? incomeTotal : 0;
       accumulator.expenseTotal += Number.isFinite(expenseTotal) ? expenseTotal : 0;
+      accumulator.fineTotal += Number.isFinite(fineTotal) ? fineTotal : 0;
+      accumulator.netPayable += Number.isFinite(netPayable) ? netPayable : 0;
       return accumulator;
-    }, { count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0 });
+    }, { count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 });
 
     return res.json({
       success: true,
@@ -1312,6 +1335,8 @@ export const createPayment = async (req, res, next) => {
           toDate: paymentRecord.toDate,
           incomeTotal: paymentRecord.incomeTotal,
           expenseTotal: paymentRecord.expenseTotal,
+          fineTotal: paymentRecord.fineTotal,
+          netPayable: paymentRecord.netPayable,
           paidAmount: paymentRecord.paidAmount,
           notes: paymentRecord.notes,
         });
@@ -1333,6 +1358,156 @@ export const createPayment = async (req, res, next) => {
       return res.status(409).json({ success: false, message: 'A payment already exists for this period' });
     }
 
+    return next(error);
+  }
+};
+
+export const listFineRecords = async (req, res, next) => {
+  try {
+    const { applicantId } = req.query;
+    const { fineRecords, totals } = await listFineRecordsForAdmin({ applicantId });
+
+    return res.json({
+      success: true,
+      data: {
+        fineRecords: serializeFineRecords(fineRecords),
+        summary: totals,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const createFineRecords = async (req, res, next) => {
+  try {
+    const { applicantIds, date, reason, amount, vatPercent, attachment } = req.body;
+    const createdBy = String(req.admin?.username || '').trim();
+
+    const result = await createFineRecordsForApplicants({
+      applicantIds,
+      date,
+      reason,
+      amount,
+      vatPercent,
+      attachment,
+      createdBy,
+    });
+
+    const createdFineRecords = await FineRecord.find({ batchId: result.batchId })
+      .populate('applicantId', 'fullName email pickerId groupName')
+      .sort({ allocationIndex: 1 })
+      .lean();
+
+    const fineApplicantObjectIds = [...new Set(createdFineRecords.map(record => String(record.applicantId?._id || record.applicantId)).filter(Boolean))];
+    const userAccounts = fineApplicantObjectIds.length
+      ? await UserAccount.find({ applicantId: { $in: fineApplicantObjectIds } }).select('applicantId email').lean()
+      : [];
+    const userEmailByApplicantId = new Map(userAccounts.map(userAccount => [String(userAccount.applicantId), userAccount.email]));
+
+    void Promise.allSettled(createdFineRecords.map(async fineRecord => {
+      const applicantId = String(fineRecord.applicantId?._id || fineRecord.applicantId || '');
+      const recipientEmail = userEmailByApplicantId.get(applicantId) || fineRecord.applicantId?.email;
+
+      if (!recipientEmail) {
+        console.warn(`No email found for fine recipient ${applicantId}`);
+        return null;
+      }
+
+      return emailService.sendFineNotificationEmail({
+        email: recipientEmail,
+        fullName: fineRecord.applicantId?.fullName || 'there',
+        pickerId: fineRecord.applicantId?.pickerId || '',
+        portalUrl: `${process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://evergreen-harvest-berry.netlify.app'}/portal/fines`,
+        date: fineRecord.date,
+        reason: fineRecord.reason,
+        amount: fineRecord.amount,
+        vatAmount: fineRecord.vatAmount,
+        netAmount: fineRecord.netAmount,
+      });
+    }));
+
+    return res.status(201).json({
+      success: true,
+      message: 'Fine records created',
+      data: {
+        fineRecords: serializeFineRecords(createdFineRecords),
+        summary: {
+          count: result.createdCount,
+          sourceAmount: result.sourceAmount,
+          sourceVatPercent: result.sourceVatPercent,
+          sourceVatAmount: result.sourceVatAmount,
+          sourceNetAmount: result.sourceNetAmount,
+        },
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const updateFineRecord = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const updatedFineRecord = await updateFineRecordById({
+      id,
+      updates: {
+        ...req.body,
+        createdBy: req.admin?.username || '',
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Fine record updated',
+      data: { fineRecord: serializeFineRecords([updatedFineRecord])[0] },
+    });
+  } catch (error) {
+    if (String(error.message || '').toLowerCase().includes('not found')) {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+
+    return next(error);
+  }
+};
+
+export const deleteFineRecord = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const deletedCount = await deleteFineRecordById(id);
+
+    if (!deletedCount) {
+      return res.status(404).json({ success: false, message: 'Fine record not found' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Fine record deleted',
+      data: { deletedCount },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const downloadFineAttachment = async (req, res, next) => {
+  try {
+    const fineRecord = await FineRecord.findById(req.params.id).lean();
+    if (!fineRecord || !fineRecord.attachment) {
+      return res.status(404).json({ success: false, message: 'Attachment not found' });
+    }
+
+    const fileBuffer = getAttachmentBuffer(fineRecord.attachment);
+    if (!fileBuffer) {
+      return res.status(404).json({ success: false, message: 'Attachment not found' });
+    }
+
+    const fileName = String(fineRecord.attachment.filename || 'attachment').replace(/[\r\n\"]+/g, '_');
+    res.setHeader('Content-Type', fineRecord.attachment.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', String(fileBuffer.length));
+    return res.send(fileBuffer);
+  } catch (error) {
     return next(error);
   }
 };

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import PasswordField from '../components/PasswordField.jsx';
-import { changeUserPassword, clearUserToken, fetchUserProfile, getExpenseHistory, getGroupMembers, getIncomeHistory, getUserToken, updateUserBankDetails, updateUserPhone, userLogin, getUserPaymentHistory } from '../lib/api.js';
+import { changeUserPassword, clearUserToken, downloadProtectedFile, fetchUserProfile, getExpenseHistory, getGroupMembers, getIncomeHistory, getUserToken, updateUserBankDetails, updateUserPhone, userLogin, getUserPaymentHistory, getUserFineHistory } from '../lib/api.js';
 
 const initialLogin = { email: '', password: '' };
 const initialPassword = { currentPassword: '', newPassword: '', confirmPassword: '' };
@@ -53,6 +53,9 @@ export default function UserPortalPage() {
   const [paymentRecords, setPaymentRecords] = useState([]);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState('');
+  const [fineHistory, setFineHistory] = useState({ fineRecords: [], summary: { count: 0, amount: 0, vatAmount: 0, netAmount: 0 } });
+  const [fineLoading, setFineLoading] = useState(false);
+  const [fineError, setFineError] = useState('');
 
   const { section } = useParams();
 
@@ -65,6 +68,7 @@ export default function UserPortalPage() {
       { key: 'income', label: 'Income details' },
       { key: 'expense', label: 'Expense details' },
       { key: 'payments', label: 'Payment history' },
+      { key: 'fines', label: 'Fine details' },
       { key: 'contact-support', label: 'Contact support' },
     ],
     []
@@ -83,6 +87,7 @@ export default function UserPortalPage() {
   const bankActionRequired = !profile?.user?.bankName || !profile?.user?.bankAccountNumber;
   const incomeTotal = Number(incomeRecords?.totalIncome || 0);
   const expenseTotal = Number(expenseRecords?.totalExpense || 0);
+  const fineTotal = Number(fineHistory?.summary?.netAmount || 0);
 
   const loadProfile = async () => {
     setProfileError('');
@@ -189,6 +194,29 @@ export default function UserPortalPage() {
     };
 
     loadPaymentHistory();
+  }, [isAuthenticated, activeSection]);
+
+  useEffect(() => {
+    if (!isAuthenticated || activeSection !== 'fines') {
+      return;
+    }
+
+    const loadFineHistory = async () => {
+      setFineLoading(true);
+      setFineError('');
+
+      try {
+        const response = await getUserFineHistory();
+        setFineHistory(response.data || { fineRecords: [], summary: { count: 0, amount: 0, vatAmount: 0, netAmount: 0 } });
+      } catch (error) {
+        setFineHistory({ fineRecords: [], summary: { count: 0, amount: 0, vatAmount: 0, netAmount: 0 } });
+        setFineError(error.message || 'Unable to load fine history');
+      } finally {
+        setFineLoading(false);
+      }
+    };
+
+    loadFineHistory();
   }, [isAuthenticated, activeSection]);
 
   const handleLoginSubmit = async event => {
@@ -1017,6 +1045,14 @@ export default function UserPortalPage() {
                               <dd className="mt-1 font-semibold text-slate-900">€{Number(record.expenseTotal || 0).toFixed(2)}</dd>
                             </div>
                             <div>
+                              <dt className="text-xs uppercase tracking-wide text-slate-400">Fine total</dt>
+                              <dd className="mt-1 font-semibold text-slate-900">€{Number(record.fineTotal || 0).toFixed(2)}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs uppercase tracking-wide text-slate-400">Net payable</dt>
+                              <dd className="mt-1 font-semibold text-forest-700">€{Number(record.netPayable || 0).toFixed(2)}</dd>
+                            </div>
+                            <div>
                               <dt className="text-xs uppercase tracking-wide text-slate-400">Status</dt>
                               <dd className="mt-1 font-semibold capitalize text-forest-700">{record.status || 'paid'}</dd>
                             </div>
@@ -1028,6 +1064,117 @@ export default function UserPortalPage() {
                   ) : (
                     <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">
                       No payment history yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeSection === 'fines' && (
+              <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold text-slate-900">Fine details</h3>
+                    <p className="mt-1 text-sm text-slate-500">Fines are shown separately from expenses and are deducted in settlement.</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900">
+                    Total fine: <span className="text-rose-700">€{fineTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {fineError ? <p className="mt-3 text-sm text-rose-600">{fineError}</p> : null}
+
+                <div className="mt-5">
+                  {fineLoading ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">
+                      Loading fine history...
+                    </div>
+                  ) : fineHistory.fineRecords.length > 0 ? (
+                    <div className="space-y-3">
+                      {fineHistory.fineRecords.map(record => {
+                        const hasAttachment = Boolean(record.attachment?.filename || record.attachment?.data);
+
+                        return (
+                          <article key={record._id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">{record.date ? formatDateOnlyUtc(record.date) : '—'}</p>
+                                <p className="mt-1 text-sm text-slate-600">{record.reason || '—'}</p>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  Attachment:{' '}
+                                  {hasAttachment ? (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        try {
+                                          await downloadProtectedFile({
+                                            path: `/api/users/fines/${record._id}/attachment`,
+                                            token: getUserToken(),
+                                            filename: record.attachment?.filename || 'attachment',
+                                            openInNewTab: true,
+                                          });
+                                        } catch {
+                                          setFineError('Failed to open attachment');
+                                        }
+                                      }}
+                                      className="inline-flex items-center gap-1 font-medium text-forest-700 hover:text-forest-800 hover:underline"
+                                    >
+                                      <span aria-hidden="true">⬇</span>
+                                      <span>{record.attachment?.filename || 'Attachment'}</span>
+                                    </button>
+                                  ) : (
+                                    'None'
+                                  )}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-xs uppercase tracking-wide text-slate-400">Net</p>
+                                <p className="text-lg font-semibold text-rose-700">€{Number(record.netAmount || 0).toFixed(2)}</p>
+                              </div>
+                            </div>
+                            <dl className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
+                              <div>
+                                <dt className="text-xs uppercase tracking-wide text-slate-400">Amount</dt>
+                                <dd className="mt-1 font-semibold text-slate-900">€{Number(record.amount || 0).toFixed(2)}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs uppercase tracking-wide text-slate-400">VAT</dt>
+                                <dd className="mt-1 font-semibold text-slate-900">€{Number(record.vatAmount || 0).toFixed(2)}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs uppercase tracking-wide text-slate-400">Net deduction</dt>
+                                <dd className="mt-1 font-semibold text-rose-700">€{Number(record.netAmount || 0).toFixed(2)}</dd>
+                              </div>
+                            </dl>
+                            {hasAttachment ? (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      await downloadProtectedFile({
+                                        path: `/api/users/fines/${record._id}/attachment`,
+                                        token: getUserToken(),
+                                        filename: record.attachment?.filename || 'attachment',
+                                        openInNewTab: true,
+                                      });
+                                    } catch {
+                                      setFineError('Failed to open attachment');
+                                    }
+                                  }}
+                                  className="inline-flex rounded-full border border-forest-200 bg-white px-4 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50"
+                                >
+                                  View attachment
+                                </button>
+                              </div>
+                            ) : null}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">
+                      No fine history yet.
                     </div>
                   )}
                 </div>

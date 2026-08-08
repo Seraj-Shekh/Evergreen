@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
-import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus, createUserAccounts, removeUserAccounts, addIncomeRecord, addIncomeRecordsBulk, deleteIncomeRecord, listIncomeRecords, getTopPickers, listExpensePlans, saveExpensePlan, deleteExpensePlan, getPaymentPreview, listPaymentRecords, createPayment } from '../controllers/adminController.js';
+import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus, createUserAccounts, removeUserAccounts, addIncomeRecord, addIncomeRecordsBulk, deleteIncomeRecord, listIncomeRecords, getTopPickers, listExpensePlans, saveExpensePlan, deleteExpensePlan, getPaymentPreview, listPaymentRecords, createPayment, listFineRecords, createFineRecords, updateFineRecord, deleteFineRecord, downloadFineAttachment } from '../controllers/adminController.js';
 import { requireAdminAuth } from '../middleware/adminAuth.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 
@@ -85,6 +85,23 @@ router.post(
   validateRequest,
   createPayment
 );
+
+router.get('/fines', listFineRecords);
+router.post(
+  '/fines',
+  [
+    body('applicantIds').isArray({ min: 1 }).withMessage('applicantIds must be a non-empty array'),
+    body('date').trim().notEmpty().withMessage('date is required'),
+    body('reason').trim().notEmpty().withMessage('reason is required'),
+    body('amount').isFloat({ min: 0 }).withMessage('amount must be a non-negative number'),
+    body('vatPercent').isFloat({ min: 0 }).withMessage('vatPercent must be a non-negative number'),
+  ],
+  validateRequest,
+  createFineRecords
+);
+router.patch('/fines/:id', updateFineRecord);
+router.delete('/fines/:id', deleteFineRecord);
+router.get('/fines/:id/attachment', downloadFineAttachment);
 
 router.get('/expense-plans', listExpensePlans);
 router.post(

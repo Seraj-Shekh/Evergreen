@@ -52,12 +52,12 @@ export default function AdminPaymentRecordPage() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [paymentRecords, setPaymentRecords] = useState([]);
-  const [summary, setSummary] = useState({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0 });
+  const [summary, setSummary] = useState({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 });
 
   useEffect(() => {
     if (!isAuthenticated) {
       setPaymentRecords([]);
-      setSummary({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0 });
+      setSummary({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 });
       setSearch('');
     }
   }, [isAuthenticated]);
@@ -69,10 +69,10 @@ export default function AdminPaymentRecordPage() {
     try {
       const response = await fetchAdminPaymentRecords();
       setPaymentRecords(response.data.paymentRecords || []);
-      setSummary(response.data.summary || { count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0 });
+      setSummary(response.data.summary || { count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 });
     } catch (loadError) {
       setPaymentRecords([]);
-      setSummary({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0 });
+      setSummary({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 });
       setError(loadError.message || 'Failed to load payment records');
     } finally {
       setLoading(false);
@@ -138,13 +138,17 @@ export default function AdminPaymentRecordPage() {
     const paidAmount = Number(record.paidAmount || 0);
     const incomeTotal = Number(record.incomeTotal || 0);
     const expenseTotal = Number(record.expenseTotal || 0);
+    const fineTotal = Number(record.fineTotal || 0);
+    const netPayable = Number(record.netPayable || 0);
 
     accumulator.count += 1;
     accumulator.paidAmount += Number.isFinite(paidAmount) ? paidAmount : 0;
     accumulator.incomeTotal += Number.isFinite(incomeTotal) ? incomeTotal : 0;
     accumulator.expenseTotal += Number.isFinite(expenseTotal) ? expenseTotal : 0;
+    accumulator.fineTotal += Number.isFinite(fineTotal) ? fineTotal : 0;
+    accumulator.netPayable += Number.isFinite(netPayable) ? netPayable : 0;
     return accumulator;
-  }, { count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0 }), [filteredRecords]);
+  }, { count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 }), [filteredRecords]);
 
   if (!isAuthenticated) {
     return (
@@ -242,6 +246,16 @@ export default function AdminPaymentRecordPage() {
           <p className="mt-2 text-2xl font-semibold text-rose-700">{formatEuro(totals.expenseTotal)}</p>
           <p className="mt-1 text-sm text-slate-500">Deducted before payout</p>
         </div>
+        <div className="rounded-3xl border border-forest-100 bg-white p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Fine total</p>
+          <p className="mt-2 text-2xl font-semibold text-amber-700">{formatEuro(totals.fineTotal)}</p>
+          <p className="mt-1 text-sm text-slate-500">Deducted separately from expense</p>
+        </div>
+        <div className="rounded-3xl border border-forest-100 bg-white p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Net payable</p>
+          <p className="mt-2 text-2xl font-semibold text-forest-700">{formatEuro(totals.netPayable)}</p>
+          <p className="mt-1 text-sm text-slate-500">Income minus expense minus fine</p>
+        </div>
       </div>
 
       <div className="mt-6 rounded-3xl border border-forest-100 bg-white p-5 shadow-soft">
@@ -276,6 +290,7 @@ export default function AdminPaymentRecordPage() {
                   <th className="px-4 py-3 font-semibold">Period</th>
                   <th className="px-4 py-3 font-semibold">Income</th>
                   <th className="px-4 py-3 font-semibold">Expense</th>
+                  <th className="px-4 py-3 font-semibold">Fine</th>
                   <th className="px-4 py-3 font-semibold">Net payable</th>
                   <th className="px-4 py-3 font-semibold">Paid amount</th>
                   <th className="px-4 py-3 font-semibold">Paid by</th>
@@ -301,6 +316,7 @@ export default function AdminPaymentRecordPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-700">{formatEuro(record.incomeTotal)}</td>
                       <td className="px-4 py-3 text-slate-700">{formatEuro(record.expenseTotal)}</td>
+                      <td className="px-4 py-3 text-slate-700">{formatEuro(record.fineTotal)}</td>
                       <td className="px-4 py-3 font-semibold text-forest-700">{formatEuro(record.netPayable)}</td>
                       <td className="px-4 py-3 font-semibold text-slate-900">{formatEuro(record.paidAmount)}</td>
                       <td className="px-4 py-3 text-slate-700">{record.paidBy || '—'}</td>
@@ -310,7 +326,7 @@ export default function AdminPaymentRecordPage() {
                 }) : null}
                 {!loading && filteredRecords.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-slate-500" colSpan="11">
+                    <td className="px-4 py-8 text-center text-slate-500" colSpan="12">
                       No payment records found.
                     </td>
                   </tr>

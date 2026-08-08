@@ -13,6 +13,17 @@ const jsonHeaders = (token) => ({
 
 const parseJson = async response => response.json().catch(() => ({}));
 
+const parseFilenameFromDisposition = value => {
+  const match = String(value || '').match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+  const encoded = match?.[1] || match?.[2] || 'attachment';
+
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return encoded;
+  }
+};
+
 const request = async (path, options = {}) => {
   const response = await fetch(`${API_BASE_URL}${path}`, options);
   const data = await parseJson(response);
@@ -22,6 +33,35 @@ const request = async (path, options = {}) => {
   }
 
   return data;
+};
+
+export const downloadProtectedFile = async ({ path, token, filename = 'attachment', openInNewTab = false }) => {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: jsonHeaders(token),
+  });
+
+  if (!response.ok) {
+    const data = await parseJson(response);
+    throw new Error(data.message || 'Failed to download file');
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const suggestedFilename = parseFilenameFromDisposition(response.headers.get('Content-Disposition')) || filename;
+
+  if (openInNewTab) {
+    window.open(objectUrl, '_blank', 'noopener,noreferrer');
+  } else {
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = suggestedFilename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }
+
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  return suggestedFilename;
 };
 
 export const submitApplication = async payload => {
@@ -205,6 +245,40 @@ export const createAdminPaymentRecord = async payload =>
     body: JSON.stringify(payload),
   });
 
+export const fetchAdminFineRecords = async params => {
+  const query = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  return request(`/api/admin/fines${query.toString() ? `?${query.toString()}` : ''}`, {
+    headers: jsonHeaders(getAdminToken()),
+  });
+};
+
+export const createAdminFineRecords = async payload =>
+  request('/api/admin/fines', {
+    method: 'POST',
+    headers: jsonHeaders(getAdminToken()),
+    body: JSON.stringify(payload),
+  });
+
+export const updateAdminFineRecord = async (id, payload) =>
+  request(`/api/admin/fines/${id}`, {
+    method: 'PATCH',
+    headers: jsonHeaders(getAdminToken()),
+    body: JSON.stringify(payload),
+  });
+
+export const deleteAdminFineRecord = async id =>
+  request(`/api/admin/fines/${id}`, {
+    method: 'DELETE',
+    headers: jsonHeaders(getAdminToken()),
+  });
+
 export const userLogin = async credentials => {
   const data = await request('/api/users/login', {
     method: 'POST',
@@ -300,6 +374,20 @@ export const getUserPaymentHistory = async (params = {}) => {
   });
 
   return request(`/api/users/payments${query.toString() ? `?${query.toString()}` : ''}`, {
+    headers: jsonHeaders(getUserToken()),
+  });
+};
+
+export const getUserFineHistory = async (params = {}) => {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  return request(`/api/users/fines${query.toString() ? `?${query.toString()}` : ''}`, {
     headers: jsonHeaders(getUserToken()),
   });
 };

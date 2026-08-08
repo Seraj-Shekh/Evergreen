@@ -29,6 +29,17 @@ const renderResetButton = (resetUrl) => `
   </div>
 `;
 
+const renderPortalButton = (portalUrl, label = 'Open your account') => `
+  <div style="text-align: center; margin: 28px 0;">
+    <a
+      href="${portalUrl}"
+      style="display: inline-block; background: #153b20; color: #fff; text-decoration: none; padding: 12px 22px; border-radius: 999px; font-weight: 700;"
+    >
+      ${label}
+    </a>
+  </div>
+`;
+
 const renderEmailFooter = () => `
   <hr style="margin-top: 40px; border: none; border-top: 1px solid #ddd;">
   <div style="font-size: 12px; color: #666; line-height: 1.7;">
@@ -358,12 +369,16 @@ const emailService = {
       toDate,
       incomeTotal,
       expenseTotal,
+      fineTotal,
+      netPayable,
       paidAmount,
       notes,
     } = paymentData;
 
     const formattedIncome = formatMoney(incomeTotal);
     const formattedExpense = formatMoney(expenseTotal);
+    const formattedFine = formatMoney(fineTotal);
+    const formattedNetPayable = formatMoney(netPayable);
     const formattedPaidAmount = formatMoney(paidAmount);
 
     try {
@@ -383,6 +398,8 @@ const emailService = {
                   <li>Period: <strong>${formatDateOnlyUtc(fromDate)} to ${formatDateOnlyUtc(toDate)}</strong></li>
                   <li>Income total: <strong>€${formattedIncome}</strong></li>
                   <li>Expense total: <strong>€${formattedExpense}</strong></li>
+                  <li>Fine total: <strong>€${formattedFine}</strong></li>
+                  <li>Net payable: <strong>€${formattedNetPayable}</strong></li>
                   <li>Paid amount: <strong>€${formattedPaidAmount}</strong></li>
                 </ul>
                 ${notes ? `<p><strong>Note:</strong> ${notes}</p>` : ''}
@@ -413,6 +430,83 @@ const emailService = {
       return true;
     } catch (error) {
       console.error('Brevo payment notification error:', error);
+      return null;
+    }
+  },
+  sendFineNotificationEmail: async (fineData) => {
+    const { brevoApiKey, senderEmail, senderName, logoUrl, clientUrl } = getEmailBranding();
+
+    if (!brevoApiKey) {
+      console.warn('BREVO_API_KEY not set; skipping fine notification email');
+      return null;
+    }
+
+    const {
+      email,
+      fullName,
+      pickerId,
+      portalUrl,
+      date,
+      reason,
+      amount,
+      vatAmount,
+      netAmount,
+    } = fineData;
+
+    const formattedDate = date ? formatDateOnlyUtc(date) : 'N/A';
+    const formattedAmount = formatMoney(amount);
+    const formattedVat = formatMoney(vatAmount);
+    const formattedNet = formatMoney(netAmount);
+    const loginUrl = portalUrl || `${clientUrl}/portal`;
+
+    try {
+      const emailPayload = {
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email, name: fullName }],
+        subject: 'A fine has been added to your account',
+        htmlContent: `
+          <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+              <div style="max-width: 600px; margin: 0 auto;">
+                ${renderEmailHeader({ logoUrl, title: `Hi ${fullName},`, subtitle: 'A new fine has been added to your account.' })}
+                <p>A fine was added to your picker account. You can log in to view the full details in your portal.</p>
+                ${renderPortalButton(loginUrl, 'View fine details')}
+                <p><strong>Fine details:</strong></p>
+                <ul>
+                  <li>Picker ID: <strong>${pickerId}</strong></li>
+                  <li>Date: <strong>${formattedDate}</strong></li>
+                  <li>Reason: <strong>${reason}</strong></li>
+                  <li>Base amount: <strong>€${formattedAmount}</strong></li>
+                  <li>VAT: <strong>€${formattedVat}</strong></li>
+                  <li>Net fine: <strong>€${formattedNet}</strong></li>
+                </ul>
+                <p>Please log in to your account to see the updated fine history and attachment proof.</p>
+                ${renderEmailFooter()}
+              </div>
+            </body>
+          </html>
+        `,
+      };
+
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': brevoApiKey,
+        },
+        body: JSON.stringify(emailPayload),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Brevo API error:', error);
+        return null;
+      }
+
+      console.log(`Fine notification email sent to ${email}`);
+      return true;
+    } catch (error) {
+      console.error('Brevo fine notification error:', error);
       return null;
     }
   },

@@ -7,6 +7,7 @@ const paymentRecordSchema = new mongoose.Schema(
     toDate: { type: Date, required: true, index: true },
     incomeTotal: { type: Number, required: true, min: 0 },
     expenseTotal: { type: Number, required: true, min: 0 },
+    fineTotal: { type: Number, required: true, min: 0, default: 0 },
     netPayable: { type: Number, required: true },
     paidAmount: { type: Number, required: true },
     currency: { type: String, trim: true, maxlength: 8, default: 'EUR' },
