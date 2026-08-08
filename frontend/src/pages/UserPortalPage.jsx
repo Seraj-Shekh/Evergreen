@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import PasswordField from '../components/PasswordField.jsx';
-import { changeUserPassword, clearUserToken, downloadProtectedFile, fetchUserProfile, getExpenseHistory, getGroupMembers, getIncomeHistory, getUserToken, updateUserBankDetails, updateUserPhone, userLogin, getUserPaymentHistory, getUserFineHistory } from '../lib/api.js';
+import { changeUserPassword, clearUserToken, downloadProtectedFile, fetchUserProfile, getExpenseHistory, getGroupMembers, getIncomeHistory, getUserToken, getUserTopPickers, updateUserBankDetails, updateUserPhone, userLogin, getUserPaymentHistory, getUserFineHistory } from '../lib/api.js';
 
 const initialLogin = { email: '', password: '' };
 const initialPassword = { currentPassword: '', newPassword: '', confirmPassword: '' };
@@ -14,6 +14,10 @@ const formatDateOnlyUtc = value => new Intl.DateTimeFormat('en-GB', {
   dateStyle: 'medium',
   timeZone: 'UTC',
 }).format(new Date(value));
+const formatCompactKg = value => new Intl.NumberFormat('en-GB', {
+  maximumFractionDigits: 2,
+  minimumFractionDigits: 0,
+}).format(Number(value || 0));
 
 export default function UserPortalPage() {
   const [loginForm, setLoginForm] = useState(initialLogin);
@@ -56,6 +60,9 @@ export default function UserPortalPage() {
   const [fineHistory, setFineHistory] = useState({ fineRecords: [], summary: { count: 0, amount: 0, vatAmount: 0, netAmount: 0 } });
   const [fineLoading, setFineLoading] = useState(false);
   const [fineError, setFineError] = useState('');
+  const [topPickers, setTopPickers] = useState([]);
+  const [topPickersLoading, setTopPickersLoading] = useState(false);
+  const [topPickersError, setTopPickersError] = useState('');
 
   const { section } = useParams();
 
@@ -69,6 +76,7 @@ export default function UserPortalPage() {
       { key: 'expense', label: 'Expense details' },
       { key: 'payments', label: 'Payment history' },
       { key: 'fines', label: 'Fine details' },
+      { key: 'top-pickers', label: 'Top pickers' },
       { key: 'contact-support', label: 'Contact support' },
     ],
     []
@@ -88,6 +96,7 @@ export default function UserPortalPage() {
   const incomeTotal = Number(incomeRecords?.totalIncome || 0);
   const expenseTotal = Number(expenseRecords?.totalExpense || 0);
   const fineTotal = Number(fineHistory?.summary?.netAmount || 0);
+  const maxTopPickerWeight = topPickers.length ? Math.max(...topPickers.map(item => Number(item.netBerryWeightKg || 0))) : 0;
 
   const loadProfile = async () => {
     setProfileError('');
@@ -217,6 +226,29 @@ export default function UserPortalPage() {
     };
 
     loadFineHistory();
+  }, [isAuthenticated, activeSection]);
+
+  useEffect(() => {
+    if (!isAuthenticated || activeSection !== 'top-pickers') {
+      return;
+    }
+
+    const loadTopPickers = async () => {
+      setTopPickersLoading(true);
+      setTopPickersError('');
+
+      try {
+        const response = await getUserTopPickers({ limit: 20 });
+        setTopPickers(response.data?.topPickers || []);
+      } catch (error) {
+        setTopPickers([]);
+        setTopPickersError(error.message || 'Unable to load top pickers');
+      } finally {
+        setTopPickersLoading(false);
+      }
+    };
+
+    loadTopPickers();
   }, [isAuthenticated, activeSection]);
 
   const handleLoginSubmit = async event => {
@@ -354,6 +386,7 @@ export default function UserPortalPage() {
     setPasswordForm(initialPassword);
     setExpenseRecords(null);
     setPaymentRecords([]); // Reset payment records on logout
+      setTopPickers([]);
   };
 
   if (!isAuthenticated) {
@@ -1177,6 +1210,120 @@ export default function UserPortalPage() {
                       No fine history yet.
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {activeSection === 'top-pickers' && (
+              <div className="rounded-[28px] border border-slate-100 bg-white p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)] sm:p-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold text-slate-900">Top pickers</h3>
+                    <p className="mt-1 text-sm text-slate-500">A leaderboard to keep you motivated. It ranks everyone by net berry weight picked until today.</p>
+                  </div>
+                  <div className="rounded-2xl bg-forest-50 px-4 py-3 text-sm font-semibold text-slate-900">
+                    {topPickers.length ? `${topPickers.length} pickers ranked` : 'No ranking yet'}
+                  </div>
+                </div>
+
+                <div className="mt-5 rounded-[24px] border border-forest-100 bg-gradient-to-br from-forest-50 via-white to-amber-50 p-4 sm:p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Leaderboard</p>
+                      <p className="mt-1 text-sm text-slate-600">Your progress compared with the strongest pickers.</p>
+                    </div>
+                    <div className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
+                      Updated today
+                    </div>
+                  </div>
+
+                  {topPickersError ? <p className="mt-4 text-sm text-rose-600">{topPickersError}</p> : null}
+                  {topPickersLoading ? <p className="mt-4 text-sm text-slate-600">Loading top pickers...</p> : null}
+
+                  {!topPickersLoading && topPickers.length > 0 ? (
+                    <div className="mt-5 space-y-3">
+                      {topPickers.slice(0, 5).map(picker => {
+                        const share = maxTopPickerWeight ? Math.max(10, (Number(picker.netBerryWeightKg || 0) / maxTopPickerWeight) * 100) : 0;
+
+                        return (
+                          <article key={picker.applicantId} className={`rounded-3xl border p-4 shadow-sm ${picker.rank === 1 ? 'border-amber-200 bg-white' : 'border-slate-100 bg-white/90'}`}>
+                            <div className="flex items-start gap-4">
+                              <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-sm font-bold ${picker.rank === 1 ? 'bg-amber-100 text-amber-800' : picker.rank === 2 ? 'bg-slate-100 text-slate-700' : picker.rank === 3 ? 'bg-emerald-100 text-emerald-800' : 'bg-forest-50 text-forest-700'}`}>
+                                #{picker.rank}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-base font-semibold text-slate-900">{picker.fullName}</p>
+                                    <p className="mt-0.5 text-xs text-slate-500">{picker.pickerId || '—'} · {picker.groupName || 'No group'}</p>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-50 px-3 py-2 text-right">
+                                    <p className="text-[11px] uppercase tracking-wide text-slate-400">Net berry wt</p>
+                                    <p className="text-sm font-semibold text-forest-700">{formatCompactKg(picker.netBerryWeightKg)} kg</p>
+                                  </div>
+                                </div>
+                                <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+                                  <div
+                                    className={`h-full rounded-full ${picker.rank === 1 ? 'bg-gradient-to-r from-amber-500 to-orange-400' : 'bg-gradient-to-r from-forest-600 to-emerald-400'}`}
+                                    style={{ width: `${share}%` }}
+                                  />
+                                </div>
+                                <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                                  <span>{picker.recordCount || 0} records</span>
+                                  <span>{picker.totalIncome ? `Income €${Number(picker.totalIncome || 0).toFixed(2)}` : 'Keep going'}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : !topPickersLoading ? (
+                    <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
+                      No leaderboard data yet.
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-100 bg-white">
+                  <div className="border-b border-slate-100 px-4 py-4 sm:px-5">
+                    <h4 className="text-sm font-semibold text-slate-900">Leaderboard details</h4>
+                    <p className="mt-1 text-xs text-slate-500">Scroll sideways if needed. The cards above are optimized for phones.</p>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                      <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3 font-semibold">Rank</th>
+                          <th className="px-4 py-3 font-semibold">Name</th>
+                          <th className="px-4 py-3 font-semibold">Picker ID</th>
+                          <th className="px-4 py-3 font-semibold">Net berry wt</th>
+                          <th className="px-4 py-3 font-semibold">Group</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {!topPickersLoading && topPickers.length > 0 ? topPickers.map(picker => (
+                          <tr key={picker.applicantId} className={picker.rank === 1 ? 'bg-amber-50/40' : 'hover:bg-slate-50/70'}>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex min-w-12 items-center justify-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">#{picker.rank}</span>
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-slate-900">{picker.fullName}</td>
+                            <td className="px-4 py-3 text-slate-700">{picker.pickerId || '—'}</td>
+                            <td className="px-4 py-3 font-semibold text-forest-700">{formatCompactKg(picker.netBerryWeightKg)} kg</td>
+                            <td className="px-4 py-3 text-slate-700">{picker.groupName || '—'}</td>
+                          </tr>
+                        )) : null}
+                        {!topPickersLoading && topPickers.length === 0 ? (
+                          <tr>
+                            <td className="px-4 py-8 text-center text-slate-500" colSpan="5">
+                              No picker data found yet.
+                            </td>
+                          </tr>
+                        ) : null}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}

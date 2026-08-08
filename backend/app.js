@@ -46,6 +46,39 @@ const isLocalDevOrigin = (origin) => {
   }
 };
 
+const isPrivateNetworkOrigin = (origin) => {
+  if (!origin) {
+    return false;
+  }
+
+  try {
+    const url = new URL(origin);
+    const hostname = url.hostname;
+
+    if (isLocalDevOrigin(origin)) {
+      return true;
+    }
+
+    if (/^10\.(?:\d{1,3}\.){2}\d{1,3}$/.test(hostname)) {
+      return true;
+    }
+
+    if (/^192\.168\.(?:\d{1,3})\.\d{1,3}$/.test(hostname)) {
+      return true;
+    }
+
+    const match172 = hostname.match(/^172\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (match172) {
+      const secondOctet = Number(match172[1]);
+      return secondOctet >= 16 && secondOctet <= 31;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+};
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -69,7 +102,7 @@ app.use(
         return callback(null, true);
       }
 
-      if (allowedOrigins.includes(origin) || isLocalDevOrigin(origin)) {
+      if (allowedOrigins.includes(origin) || isLocalDevOrigin(origin) || isPrivateNetworkOrigin(origin)) {
         return callback(null, true);
       }
 

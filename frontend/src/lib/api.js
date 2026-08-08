@@ -1,6 +1,8 @@
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL
-  || (import.meta.env.PROD ? '' : 'http://localhost:5000')
+  || (import.meta.env.PROD
+    ? ''
+    : `http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:5000`)
 ).replace(/\/$/, '');
 
 const ADMIN_TOKEN_KEY = 'evergreen_admin_token';
@@ -335,6 +337,20 @@ export const getGroupMembers = async () =>
   request('/api/users/group-members', {
     headers: jsonHeaders(getUserToken()),
   });
+
+export const getUserTopPickers = async (params = {}) => {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  return request(`/api/users/top-pickers${query.toString() ? `?${query.toString()}` : ''}`, {
+    headers: jsonHeaders(getUserToken()),
+  });
+};
 
 export const getIncomeHistory = async (params = {}) => {
   const query = new URLSearchParams();

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import { validateRequest } from '../middleware/validateRequest.js';
 import { loginUser, getCurrentUser, changePassword, updatePhoneNumber, updateBankDetails, getGroupMembers, getIncomeHistory, getExpenseHistory, getPaymentHistory, getFineHistory, downloadFineAttachment, requestPasswordReset, resetPassword } from '../controllers/userController.js';
+import { getTopPickers } from '../controllers/adminController.js';
 import { requireUserAuth } from '../middleware/userAuth.js';
 
 const router = Router();
@@ -65,6 +66,8 @@ router.post(
 );
 
 router.get('/group-members', getGroupMembers);
+
+router.get('/top-pickers', getTopPickers);
 
 router.get('/income', getIncomeHistory);
 
