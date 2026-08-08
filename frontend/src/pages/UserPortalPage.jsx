@@ -19,6 +19,15 @@ const formatCompactKg = value => new Intl.NumberFormat('en-GB', {
   minimumFractionDigits: 0,
 }).format(Number(value || 0));
 
+const getNameInitials = value => {
+  const parts = String(value || '').trim().split(' ').filter(Boolean);
+  if (!parts.length) {
+    return 'P';
+  }
+
+  return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase();
+};
+
 export default function UserPortalPage() {
   const [loginForm, setLoginForm] = useState(initialLogin);
   const [passwordForm, setPasswordForm] = useState(initialPassword);
@@ -238,7 +247,7 @@ export default function UserPortalPage() {
       setTopPickersError('');
 
       try {
-        const response = await getUserTopPickers({ limit: 20 });
+        const response = await getUserTopPickers();
         setTopPickers(response.data?.topPickers || []);
       } catch (error) {
         setTopPickers([]);
@@ -1226,60 +1235,53 @@ export default function UserPortalPage() {
                   </div>
                 </div>
 
-                <div className="mt-5 rounded-[24px] border border-forest-100 bg-gradient-to-br from-forest-50 via-white to-amber-50 p-4 sm:p-5">
-                  <div className="flex items-center justify-between gap-3">
+                <div className="mt-5 rounded-[24px] border border-forest-100 bg-gradient-to-br from-forest-800 via-forest-700 to-forest-600 px-4 pb-5 pt-4 text-white sm:px-5 sm:pt-5">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Leaderboard</p>
-                      <p className="mt-1 text-sm text-slate-600">Your progress compared with the strongest pickers.</p>
+                      <p className="text-[11px] uppercase tracking-[0.28em] text-white/70">Leaderboard</p>
+                      <p className="mt-1 text-sm text-white/85">Top 3 by net berry weight</p>
                     </div>
-                    <div className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-                      Updated today
-                    </div>
+                    <span className="rounded-full bg-forest-900/40 px-3 py-1 text-xs font-semibold text-forest-50">Live rank</span>
                   </div>
 
-                  {topPickersError ? <p className="mt-4 text-sm text-rose-600">{topPickersError}</p> : null}
-                  {topPickersLoading ? <p className="mt-4 text-sm text-slate-600">Loading top pickers...</p> : null}
+                  {topPickersError ? <p className="mt-4 text-sm text-rose-100">{topPickersError}</p> : null}
+                  {topPickersLoading ? <p className="mt-4 text-sm text-white/85">Loading top pickers...</p> : null}
 
-                  {!topPickersLoading && topPickers.length > 0 ? (
-                    <div className="mt-5 space-y-3">
-                      {topPickers.slice(0, 5).map(picker => {
-                        const share = maxTopPickerWeight ? Math.max(10, (Number(picker.netBerryWeightKg || 0) / maxTopPickerWeight) * 100) : 0;
+                  {!topPickersLoading && topPickers.length > 0 ? (() => {
+                    const first = topPickers.find(item => item.rank === 1) || topPickers[0] || null;
+                    const second = topPickers.find(item => item.rank === 2) || topPickers[1] || null;
+                    const third = topPickers.find(item => item.rank === 3) || topPickers[2] || null;
+                    const podiumOrder = [second, first, third].filter(Boolean);
 
-                        return (
-                          <article key={picker.applicantId} className={`rounded-3xl border p-4 shadow-sm ${picker.rank === 1 ? 'border-amber-200 bg-white' : 'border-slate-100 bg-white/90'}`}>
-                            <div className="flex items-start gap-4">
-                              <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-sm font-bold ${picker.rank === 1 ? 'bg-amber-100 text-amber-800' : picker.rank === 2 ? 'bg-slate-100 text-slate-700' : picker.rank === 3 ? 'bg-emerald-100 text-emerald-800' : 'bg-forest-50 text-forest-700'}`}>
-                                #{picker.rank}
+                    const heightByRank = (rank) => {
+                      if (rank === 1) return 'h-40';
+                      if (rank === 2) return 'h-28';
+                      return 'h-24';
+                    };
+
+                    return (
+                      <div className="mt-5">
+                        <div className="flex items-end justify-center gap-2 sm:gap-3">
+                          {podiumOrder.map(picker => (
+                            <div key={`podium-${picker.applicantId}`} className="flex w-[31%] max-w-[130px] flex-col items-center">
+                              <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full border-2 border-white/40 bg-white/15 text-sm font-bold text-white backdrop-blur">
+                                {getNameInitials(picker.fullName)}
                               </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                  <div className="min-w-0">
-                                    <p className="truncate text-base font-semibold text-slate-900">{picker.fullName}</p>
-                                    <p className="mt-0.5 text-xs text-slate-500">{picker.pickerId || '—'} · {picker.groupName || 'No group'}</p>
-                                  </div>
-                                  <div className="rounded-2xl bg-slate-50 px-3 py-2 text-right">
-                                    <p className="text-[11px] uppercase tracking-wide text-slate-400">Net berry wt</p>
-                                    <p className="text-sm font-semibold text-forest-700">{formatCompactKg(picker.netBerryWeightKg)} kg</p>
-                                  </div>
-                                </div>
-                                <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-                                  <div
-                                    className={`h-full rounded-full ${picker.rank === 1 ? 'bg-gradient-to-r from-amber-500 to-orange-400' : 'bg-gradient-to-r from-forest-600 to-emerald-400'}`}
-                                    style={{ width: `${share}%` }}
-                                  />
-                                </div>
-                                <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                                  <span>{picker.recordCount || 0} records</span>
-                                  <span>{picker.totalIncome ? `Income €${Number(picker.totalIncome || 0).toFixed(2)}` : 'Keep going'}</span>
+                              <p className="max-w-full truncate text-center text-xs font-semibold text-white">{picker.fullName}</p>
+                              <p className="mt-0.5 text-[11px] text-white/80">{picker.pickerId || '—'}</p>
+                              <div className={`mt-3 flex w-full ${heightByRank(picker.rank)} items-center justify-center rounded-t-2xl border border-forest-200/70 bg-gradient-to-b from-forest-100 via-forest-200 to-forest-300 text-forest-900 shadow-lg`}>
+                                <div className="text-center">
+                                  <p className="text-3xl font-extrabold leading-none">{picker.rank}</p>
+                                  <p className="mt-1 text-[11px] font-semibold">{formatCompactKg(picker.netBerryWeightKg)} kg</p>
                                 </div>
                               </div>
                             </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  ) : !topPickersLoading ? (
-                    <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })() : !topPickersLoading ? (
+                    <div className="mt-5 rounded-2xl border border-white/30 bg-white/10 px-4 py-4 text-sm text-white/85">
                       No leaderboard data yet.
                     </div>
                   ) : null}
@@ -1287,42 +1289,26 @@ export default function UserPortalPage() {
 
                 <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-100 bg-white">
                   <div className="border-b border-slate-100 px-4 py-4 sm:px-5">
-                    <h4 className="text-sm font-semibold text-slate-900">Leaderboard details</h4>
-                    <p className="mt-1 text-xs text-slate-500">Scroll sideways if needed. The cards above are optimized for phones.</p>
+                    <h4 className="text-sm font-semibold text-slate-900">Other pickers</h4>
+                    <p className="mt-1 text-xs text-slate-500">Ranks below top 3</p>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                      <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th className="px-4 py-3 font-semibold">Rank</th>
-                          <th className="px-4 py-3 font-semibold">Name</th>
-                          <th className="px-4 py-3 font-semibold">Picker ID</th>
-                          <th className="px-4 py-3 font-semibold">Net berry wt</th>
-                          <th className="px-4 py-3 font-semibold">Group</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white">
-                        {!topPickersLoading && topPickers.length > 0 ? topPickers.map(picker => (
-                          <tr key={picker.applicantId} className={picker.rank === 1 ? 'bg-amber-50/40' : 'hover:bg-slate-50/70'}>
-                            <td className="px-4 py-3">
-                              <span className="inline-flex min-w-12 items-center justify-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">#{picker.rank}</span>
-                            </td>
-                            <td className="px-4 py-3 font-semibold text-slate-900">{picker.fullName}</td>
-                            <td className="px-4 py-3 text-slate-700">{picker.pickerId || '—'}</td>
-                            <td className="px-4 py-3 font-semibold text-forest-700">{formatCompactKg(picker.netBerryWeightKg)} kg</td>
-                            <td className="px-4 py-3 text-slate-700">{picker.groupName || '—'}</td>
-                          </tr>
-                        )) : null}
-                        {!topPickersLoading && topPickers.length === 0 ? (
-                          <tr>
-                            <td className="px-4 py-8 text-center text-slate-500" colSpan="5">
-                              No picker data found yet.
-                            </td>
-                          </tr>
-                        ) : null}
-                      </tbody>
-                    </table>
+                  <div className="divide-y divide-slate-100">
+                    {!topPickersLoading && topPickers.length > 3 ? topPickers.slice(3).map(picker => (
+                      <article key={`list-${picker.applicantId}`} className="px-4 py-3 sm:px-5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900">#{picker.rank} {picker.fullName}</p>
+                            <p className="mt-0.5 text-xs text-slate-500">{picker.pickerId || '—'} · {picker.groupName || 'No group'}</p>
+                          </div>
+                          <p className="shrink-0 text-sm font-semibold text-forest-700">{formatCompactKg(picker.netBerryWeightKg)} kg</p>
+                        </div>
+                      </article>
+                    )) : null}
+
+                    {!topPickersLoading && topPickers.length <= 3 ? (
+                      <p className="px-4 py-6 text-center text-sm text-slate-500">No more ranks below top 3 yet.</p>
+                    ) : null}
                   </div>
                 </div>
               </div>
