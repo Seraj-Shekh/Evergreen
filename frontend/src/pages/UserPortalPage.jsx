@@ -72,6 +72,7 @@ export default function UserPortalPage() {
   const [topPickers, setTopPickers] = useState([]);
   const [topPickersLoading, setTopPickersLoading] = useState(false);
   const [topPickersError, setTopPickersError] = useState('');
+  const [showTopPickersPulse, setShowTopPickersPulse] = useState(true);
 
   const { section } = useParams();
 
@@ -106,6 +107,14 @@ export default function UserPortalPage() {
   const expenseTotal = Number(expenseRecords?.totalExpense || 0);
   const fineTotal = Number(fineHistory?.summary?.netAmount || 0);
   const maxTopPickerWeight = topPickers.length ? Math.max(...topPickers.map(item => Number(item.netBerryWeightKg || 0))) : 0;
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setShowTopPickersPulse(false);
+    }, 4500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, []);
 
   const loadProfile = async () => {
     setProfileError('');
@@ -497,7 +506,23 @@ export default function UserPortalPage() {
                       : 'bg-white/10 text-white hover:bg-white/20'
                   }`}
                 >
-                  <span>{item.label}</span>
+                  <span className="flex items-center gap-2">
+                    <span>{item.label}</span>
+                    {item.key === 'top-pickers' ? (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                          activeSection === item.key
+                            ? 'bg-forest-100 text-forest-800'
+                            : 'bg-amber-200 text-amber-900'
+                        } ${showTopPickersPulse ? 'animate-pulse' : ''}`}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          <span aria-hidden="true">🏆</span>
+                          <span>New</span>
+                        </span>
+                      </span>
+                    ) : null}
+                  </span>
                   <span className="text-xs text-white/70">›</span>
                 </Link>
               ))}
@@ -548,7 +573,17 @@ export default function UserPortalPage() {
                       to={`/portal/${item.key}`}
                       className="flex w-full items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
                     >
-                      <span>{item.label}</span>
+                      <span className="flex items-center gap-2">
+                        <span>{item.label}</span>
+                        {item.key === 'top-pickers' ? (
+                          <span className={`rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 ${showTopPickersPulse ? 'animate-pulse' : ''}`}>
+                            <span className="inline-flex items-center gap-1">
+                              <span aria-hidden="true">🏆</span>
+                              <span>New</span>
+                            </span>
+                          </span>
+                        ) : null}
+                      </span>
                       <span className="text-xs text-slate-400">›</span>
                     </Link>
                   ))}
