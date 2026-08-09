@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import PasswordField from '../components/PasswordField.jsx';
-import { adminLogin, clearAdminToken, fetchAdminPaymentRecords, getAdminToken } from '../lib/api.js';
+import { adminLogin, clearAdminToken, createAdminPaymentRecord, fetchAdminPaymentPreview, fetchAdminPaymentRecords, fetchApplicant, getAdminToken } from '../lib/api.js';
 
 const loginInitial = { username: '', password: '' };
 
@@ -23,6 +23,13 @@ const formatNumber = value => {
 };
 
 const formatEuro = value => `€${formatNumber(value)}`;
+
+const formatSettlementAmount = value => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed.toFixed(2) : '';
+};
+
+const emptySettlementForm = { fromDate: '', toDate: '', paidAmount: '', notes: '' };
 
 const getApplicant = record => {
   const applicant = record?.applicantId;
@@ -75,12 +82,24 @@ export default function AdminPaymentRecordPage() {
   const [search, setSearch] = useState('');
   const [paymentRecords, setPaymentRecords] = useState([]);
   const [summary, setSummary] = useState({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 });
+  const [selectedPaymentRecord, setSelectedPaymentRecord] = useState(null);
+  const [selectedApplicant, setSelectedApplicant] = useState(null);
+  const [settlementLoading, setSettlementLoading] = useState(false);
+  const [settlementSaving, setSettlementSaving] = useState(false);
+  const [settlementError, setSettlementError] = useState('');
+  const [settlementSuccess, setSettlementSuccess] = useState('');
+  const [settlementForm, setSettlementForm] = useState(emptySettlementForm);
+  const [settlementPreview, setSettlementPreview] = useState(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
       setPaymentRecords([]);
       setSummary({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 });
       setSearch('');
+      setSelectedPaymentRecord(null);
+      setSelectedApplicant(null);
+      setSettlementForm(emptySettlementForm);
+      setSettlementPreview(null);
     }
   }, [isAuthenticated]);
 
@@ -129,6 +148,137 @@ export default function AdminPaymentRecordPage() {
     setIsAuthenticated(false);
     setPaymentRecords([]);
     setError('');
+    setSelectedPaymentRecord(null);
+    setSelectedApplicant(null);
+    setSettlementForm(emptySettlementForm);
+    setSettlementPreview(null);
+  };
+
+  const closeSettlementModal = () => {
+    setSelectedPaymentRecord(null);
+    setSelectedApplicant(null);
+    setSettlementLoading(false);
+    setSettlementSaving(false);
+    setSettlementError('');
+    setSettlementSuccess('');
+    setSettlementForm(emptySettlementForm);
+    setSettlementPreview(null);
+  };
+
+  const openSettlementModal = async record => {
+    const applicantId = record?.applicantId?._id || record?.applicantId;
+    if (!applicantId) {
+      setError('Unable to open settlement details for this record');
+      return;
+    }
+
+    setSelectedPaymentRecord(record);
+    setSelectedApplicant(null);
+    setSettlementLoading(true);
+    setSettlementError('');
+    setSettlementSuccess('');
+    setSettlementPreview(null);
+    setSettlementForm({
+      fromDate: record.fromDate ? String(record.fromDate).slice(0, 10) : '',
+      toDate: record.toDate ? String(record.toDate).slice(0, 10) : '',
+      paidAmount: String(record.paidAmount ?? ''),
+      notes: record.notes || '',
+    });
+
+    try {
+      const response = await fetchApplicant(applicantId);
+      setSelectedApplicant(response.data?.applicant || null);
+    } catch (loadError) {
+      setSettlementError(loadError.message || 'Failed to load payout details');
+    } finally {
+      setSettlementLoading(false);
+    }
+  };
+
+  const loadSettlementPreview = async nextForm => {
+    const applicantId = selectedApplicant?._id;
+    if (!applicantId || !nextForm.fromDate || !nextForm.toDate) {
+      setSettlementPreview(null);
+      setSettlementForm(current => ({ ...current, paidAmount: '' }));
+      return;
+    }
+
+    try {
+      const response = await fetchAdminPaymentPreview({
+        applicantId,
+        fromDate: nextForm.fromDate,
+        toDate: nextForm.toDate,
+      });
+      const preview = response.data || null;
+      setSettlementPreview(preview);
+      setSettlementForm(current => ({
+        ...current,
+        paidAmount: preview?.netPayable !== undefined && preview?.netPayable !== null
+          ? formatSettlementAmount(preview.netPayable)
+          : '',
+      }));
+    } catch (previewError) {
+      setSettlementPreview(null);
+      setSettlementForm(current => ({ ...current, paidAmount: '' }));
+      setSettlementError(previewError.message || 'Failed to load settlement preview');
+    }
+  };
+
+  const handleSettlementFieldChange = field => event => {
+    const value = event.target.value;
+    setSettlementForm(current => {
+      const nextForm = { ...current, [field]: value };
+      if (settlementError) {
+        setSettlementError('');
+      }
+      if (settlementSuccess) {
+        setSettlementSuccess('');
+      }
+      return nextForm;
+    });
+  };
+
+  useEffect(() => {
+    if (!selectedApplicant?._id || !settlementForm.fromDate || !settlementForm.toDate) {
+      setSettlementPreview(null);
+      setSettlementForm(current => (current.paidAmount ? { ...current, paidAmount: '' } : current));
+      return;
+    }
+
+    void loadSettlementPreview(settlementForm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedApplicant?._id, settlementForm.fromDate, settlementForm.toDate]);
+
+  const handleCreateSettlement = async event => {
+    event.preventDefault();
+
+    if (!selectedApplicant?._id) {
+      setSettlementError('Select an applicant first');
+      return;
+    }
+
+    setSettlementSaving(true);
+    setSettlementError('');
+    setSettlementSuccess('');
+
+    try {
+      await createAdminPaymentRecord({
+        applicantId: selectedApplicant._id,
+        fromDate: settlementForm.fromDate,
+        toDate: settlementForm.toDate,
+        paidAmount: settlementForm.paidAmount,
+        notes: settlementForm.notes,
+      });
+
+      setSettlementSuccess('Payment settlement created and email sent');
+      await loadPayments();
+      await openSettlementModal(selectedPaymentRecord);
+      await loadSettlementPreview(settlementForm);
+    } catch (createError) {
+      setSettlementError(createError.message || 'Failed to create settlement');
+    } finally {
+      setSettlementSaving(false);
+    }
   };
 
   const filteredRecords = useMemo(() => {
@@ -171,6 +321,21 @@ export default function AdminPaymentRecordPage() {
     accumulator.netPayable += Number.isFinite(netPayable) ? netPayable : 0;
     return accumulator;
   }, { count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 }), [filteredRecords]);
+
+  const paymentHistory = useMemo(() => {
+    const applicantId = selectedPaymentRecord?.applicantId?._id || selectedPaymentRecord?.applicantId;
+    if (!applicantId) {
+      return [];
+    }
+
+    return paymentRecords
+      .filter(record => {
+        const recordApplicantId = record?.applicantId?._id || record?.applicantId;
+        return String(recordApplicantId) === String(applicantId);
+      })
+      .slice()
+      .sort((left, right) => new Date(right.paidAt || right.createdAt || 0) - new Date(left.paidAt || left.createdAt || 0));
+  }, [paymentRecords, selectedPaymentRecord]);
 
   const handleExportExcel = () => {
     if (!filteredRecords.length) {
@@ -381,7 +546,19 @@ export default function AdminPaymentRecordPage() {
                 {!loading && filteredRecords.length > 0 ? filteredRecords.map(record => {
                   const applicant = getApplicant(record);
                   return (
-                    <tr key={record._id} className="hover:bg-slate-50/70">
+                    <tr
+                      key={record._id}
+                      className="cursor-pointer hover:bg-slate-50/70"
+                      onClick={() => void openSettlementModal(record)}
+                      tabIndex={0}
+                      role="button"
+                      onKeyDown={event => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          void openSettlementModal(record);
+                        }
+                      }}
+                    >
                       <td className="px-4 py-3 text-slate-700">{record.paidAt ? formatDateTime(record.paidAt) : '—'}</td>
                       <td className="px-4 py-3 text-slate-700">
                         <div className="min-w-0">
@@ -416,6 +593,134 @@ export default function AdminPaymentRecordPage() {
           </div>
         </div>
       </div>
+
+      {selectedPaymentRecord ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center px-3 py-3 sm:items-center sm:px-4 sm:py-6">
+          <div className="absolute inset-0 bg-slate-900/50" onClick={closeSettlementModal} />
+          <div className="relative z-10 max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-[28px] bg-white shadow-[0_30px_90px_rgba(15,23,42,0.25)]">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 sm:px-6">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Payment settlement</p>
+                <h3 className="mt-1 text-xl font-semibold text-slate-900">{selectedApplicant?.fullName || getApplicant(selectedPaymentRecord).fullName}</h3>
+                <p className="mt-1 text-sm text-slate-500">Click to review payout details and create a new settlement from here.</p>
+              </div>
+              <button type="button" onClick={closeSettlementModal} className="rounded-full px-3 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-700">
+                ✕
+              </button>
+            </div>
+
+            <div className="max-h-[calc(92vh-72px)] overflow-y-auto px-5 py-5 sm:px-6">
+              {settlementLoading ? (
+                <p className="text-sm text-slate-600">Loading payout details...</p>
+              ) : (
+                <div className="space-y-6">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Bank name</p>
+                      <p className="mt-1 font-semibold text-slate-900">{selectedApplicant?.bankName || '—'}</p>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Account number</p>
+                      <p className="mt-1 font-semibold text-slate-900 break-all">{selectedApplicant?.bankAccountNumber || '—'}</p>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Picker ID</p>
+                      <p className="mt-1 font-semibold text-slate-900">{selectedApplicant?.pickerId || getApplicant(selectedPaymentRecord).pickerId || '—'}</p>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Group</p>
+                      <p className="mt-1 font-semibold text-slate-900">{selectedApplicant?.groupName || getApplicant(selectedPaymentRecord).groupName || '—'}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
+                    <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-soft">
+                      <h4 className="text-base font-semibold text-slate-900">Payment history</h4>
+                      <div className="mt-4 space-y-3">
+                        {paymentHistory.length > 0 ? paymentHistory.slice(0, 3).map(item => (
+                          <div key={item._id} className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                            <div className="flex items-center justify-between gap-3">
+                              <span>{item.fromDate ? formatDateOnlyUtc(item.fromDate) : '—'} → {item.toDate ? formatDateOnlyUtc(item.toDate) : '—'}</span>
+                              <span className="font-semibold text-forest-700">{formatEuro(item.paidAmount)}</span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">Paid on {item.paidAt ? formatDateTime(item.paidAt) : '—'}</p>
+                          </div>
+                        )) : (
+                          <p className="text-sm text-slate-500">No prior payment history found.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleCreateSettlement} className="space-y-5 rounded-3xl border border-forest-100 bg-forest-50/60 p-4 shadow-soft">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-base font-semibold text-slate-900">Create settlement</h4>
+                          <p className="text-sm text-slate-500">Use the current applicant data and send the payment email automatically.</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 space-y-4">
+                        <label className="block text-sm font-medium text-slate-700">
+                          From date
+                          <input className="input mt-2" type="date" value={settlementForm.fromDate} onChange={handleSettlementFieldChange('fromDate')} />
+                        </label>
+                        <label className="block text-sm font-medium text-slate-700">
+                          To date
+                          <input className="input mt-2" type="date" value={settlementForm.toDate} onChange={handleSettlementFieldChange('toDate')} />
+                        </label>
+                        <label className="block text-sm font-medium text-slate-700">
+                          Paid amount
+                          <input className="input mt-2 bg-white" type="number" min="0" step="0.01" value={settlementForm.paidAmount} readOnly placeholder="Auto from preview" />
+                        </label>
+                        <label className="block text-sm font-medium text-slate-700">
+                          Notes
+                          <textarea className="input mt-2 min-h-[92px]" value={settlementForm.notes} onChange={handleSettlementFieldChange('notes')} placeholder="Optional note for this payout" />
+                        </label>
+                      </div>
+
+                      {settlementPreview ? (
+                        <div className="mt-4 rounded-2xl bg-white px-4 py-3 shadow-sm">
+                          <p className="text-xs uppercase tracking-wide text-slate-400">Preview</p>
+                          <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                            <div>
+                              <p className="text-xs text-slate-400">Income</p>
+                              <p className="font-semibold text-slate-900">{formatEuro(settlementPreview.incomeTotal)}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-slate-400">Expense</p>
+                              <p className="font-semibold text-slate-900">{formatEuro(settlementPreview.expenseTotal)}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-slate-400">Fine</p>
+                              <p className="font-semibold text-slate-900">{formatEuro(settlementPreview.fineTotal)}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-slate-400">Net payable</p>
+                              <p className="font-semibold text-forest-700">{formatEuro(settlementPreview.netPayable)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {settlementError ? <p className="mt-3 text-sm text-rose-600">{settlementError}</p> : null}
+                      {settlementSuccess ? <p className="mt-3 text-sm text-emerald-600">{settlementSuccess}</p> : null}
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button type="submit" disabled={settlementSaving || settlementLoading || !selectedApplicant?._id} className="rounded-full bg-forest-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-forest-800 disabled:cursor-not-allowed disabled:opacity-70">
+                          {settlementSaving ? 'Saving…' : 'Create payment settlement'}
+                        </button>
+                        <button type="button" onClick={closeSettlementModal} className="rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-white">
+                          Close
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
