@@ -356,10 +356,10 @@ export default function AdminPaymentRecordPage() {
         return false;
       }
 
-      if (rangeStart && recordStart < rangeStart) {
+      if (rangeStart && recordStart.getTime() !== rangeStart.getTime()) {
         return false;
       }
-      if (rangeEnd && recordEnd > rangeEnd) {
+      if (rangeEnd && recordEnd.getTime() !== rangeEnd.getTime()) {
         return false;
       }
 
