@@ -11,6 +11,7 @@ const formatCompactKg = value => new Intl.NumberFormat('en-GB', {
 }).format(Number(value || 0));
 
 const getMaxNetBerry = topPickers => (topPickers.length ? Math.max(...topPickers.map(picker => Number(picker.netBerryWeightKg || 0))) : 0);
+const getTotalNetBerry = topPickers => topPickers.reduce((sum, picker) => sum + Number(picker.netBerryWeightKg || 0), 0);
 
 export default function AdminTopPickersPage() {
   const navigate = useNavigate();
@@ -74,6 +75,7 @@ export default function AdminTopPickersPage() {
   };
 
   const maxNetBerry = getMaxNetBerry(topPickers);
+  const totalNetBerry = getTotalNetBerry(topPickers);
 
   if (!isAuthenticated) {
     return (
@@ -134,9 +136,15 @@ export default function AdminTopPickersPage() {
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">Highest net berry pickers</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600">This leaderboard ranks pickers by net berry weight picked until today, calculated as berry weight minus cart weight.</p>
           </div>
-          <div className="rounded-3xl bg-white/90 px-4 py-3 text-right shadow-sm backdrop-blur">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Pickers loaded</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{topPickers.length}</p>
+          <div className="grid gap-2 sm:min-w-[250px]">
+            <div className="rounded-3xl bg-white/90 px-4 py-3 text-right shadow-sm backdrop-blur">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Pickers loaded</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">{topPickers.length}</p>
+            </div>
+            <div className="rounded-3xl border border-forest-100 bg-forest-50/70 px-4 py-3 text-right shadow-sm backdrop-blur">
+              <p className="text-xs uppercase tracking-wide text-forest-700">Total net berry picked</p>
+              <p className="mt-1 text-xl font-semibold text-forest-800">{formatCompactKg(totalNetBerry)} kg</p>
+            </div>
           </div>
         </div>
         <div className="relative mt-5 flex flex-wrap gap-2">

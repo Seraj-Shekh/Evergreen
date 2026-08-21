@@ -29,7 +29,26 @@ const formatSettlementAmount = value => {
   return Number.isFinite(parsed) ? parsed.toFixed(2) : '';
 };
 
+const startOfUtcDay = value => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  date.setUTCHours(0, 0, 0, 0);
+  return date;
+};
+
+const endOfUtcDay = value => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  date.setUTCHours(23, 59, 59, 999);
+  return date;
+};
+
 const emptySettlementForm = { fromDate: '', toDate: '', paidAmount: '', notes: '' };
+const emptyPeriodFilter = { fromDate: '', toDate: '' };
 
 const getApplicant = record => {
   const applicant = record?.applicantId;
@@ -79,7 +98,10 @@ export default function AdminPaymentRecordPage() {
   const [loginError, setLoginError] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [filterFeedback, setFilterFeedback] = useState('');
   const [search, setSearch] = useState('');
+  const [periodFilterDraft, setPeriodFilterDraft] = useState(emptyPeriodFilter);
+  const [periodFilter, setPeriodFilter] = useState(emptyPeriodFilter);
   const [paymentRecords, setPaymentRecords] = useState([]);
   const [summary, setSummary] = useState({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 });
   const [selectedPaymentRecord, setSelectedPaymentRecord] = useState(null);
@@ -96,6 +118,9 @@ export default function AdminPaymentRecordPage() {
       setPaymentRecords([]);
       setSummary({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 });
       setSearch('');
+      setFilterFeedback('');
+      setPeriodFilterDraft(emptyPeriodFilter);
+      setPeriodFilter(emptyPeriodFilter);
       setSelectedPaymentRecord(null);
       setSelectedApplicant(null);
       setSettlementForm(emptySettlementForm);
@@ -148,10 +173,39 @@ export default function AdminPaymentRecordPage() {
     setIsAuthenticated(false);
     setPaymentRecords([]);
     setError('');
+    setFilterFeedback('');
+    setPeriodFilterDraft(emptyPeriodFilter);
+    setPeriodFilter(emptyPeriodFilter);
     setSelectedPaymentRecord(null);
     setSelectedApplicant(null);
     setSettlementForm(emptySettlementForm);
     setSettlementPreview(null);
+  };
+
+  const handleApplyPeriodFilter = () => {
+    setError('');
+    setFilterFeedback('');
+
+    const { fromDate, toDate } = periodFilterDraft;
+
+    if ((fromDate && !toDate) || (!fromDate && toDate)) {
+      setFilterFeedback('Please include both start and end dates to apply the period filter.');
+      return;
+    }
+
+    if (fromDate && toDate && toDate < fromDate) {
+      setFilterFeedback('Period end date cannot be earlier than start date.');
+      return;
+    }
+
+    setPeriodFilter(periodFilterDraft);
+  };
+
+  const handleClearPeriodFilter = () => {
+    setError('');
+    setFilterFeedback('');
+    setPeriodFilterDraft(emptyPeriodFilter);
+    setPeriodFilter(emptyPeriodFilter);
   };
 
   const closeSettlementModal = () => {
@@ -283,11 +337,40 @@ export default function AdminPaymentRecordPage() {
 
   const filteredRecords = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) {
-      return paymentRecords;
+    const rangeStart = periodFilter.fromDate ? startOfUtcDay(periodFilter.fromDate) : null;
+    const rangeEnd = periodFilter.toDate ? endOfUtcDay(periodFilter.toDate) : null;
+
+    if ((periodFilter.fromDate && !rangeStart) || (periodFilter.toDate && !rangeEnd)) {
+      return [];
     }
 
-    return paymentRecords.filter(record => {
+    const dateFilteredRecords = paymentRecords.filter(record => {
+      if (!rangeStart && !rangeEnd) {
+        return true;
+      }
+
+      const recordStart = startOfUtcDay(record.fromDate || record.paidAt || record.createdAt);
+      const recordEnd = endOfUtcDay(record.toDate || record.fromDate || record.paidAt || record.createdAt);
+
+      if (!recordStart || !recordEnd) {
+        return false;
+      }
+
+      if (rangeStart && recordStart < rangeStart) {
+        return false;
+      }
+      if (rangeEnd && recordEnd > rangeEnd) {
+        return false;
+      }
+
+      return true;
+    });
+
+    if (!query) {
+      return dateFilteredRecords;
+    }
+
+    return dateFilteredRecords.filter(record => {
       const applicant = getApplicant(record);
       const fields = [
         applicant.fullName,
@@ -304,7 +387,9 @@ export default function AdminPaymentRecordPage() {
 
       return fields.includes(query);
     });
-  }, [paymentRecords, search]);
+  }, [paymentRecords, search, periodFilter]);
+
+  const isPeriodFilterApplied = Boolean(periodFilter.fromDate && periodFilter.toDate);
 
   const totals = useMemo(() => filteredRecords.reduce((accumulator, record) => {
     const paidAmount = Number(record.paidAmount || 0);
@@ -494,13 +579,13 @@ export default function AdminPaymentRecordPage() {
       </div>
 
       <div className="mt-6 rounded-3xl border border-forest-100 bg-white p-5 shadow-soft">
-        <div className="flex flex-col gap-3 border-b border-forest-100 pb-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="border-b border-forest-100 pb-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Filters</h2>
-            <p className="text-sm text-slate-500">Filter the payment list by name, picker ID, group, or note text. Showing {filteredRecords.length} of {summary.count} loaded records.</p>
+            <p className="text-sm text-slate-500">Filter by payment period and search text. Showing {filteredRecords.length} records out of {summary.count} loaded records.</p>
           </div>
-          <div className="flex flex-col gap-3 sm:min-w-[320px] sm:items-end">
-            <label className="block text-sm font-medium text-slate-700 sm:w-[320px]">
+          <div className="mt-4 grid gap-4 lg:grid-cols-2 lg:items-end">
+            <label className="block text-sm font-medium text-slate-700">
               Search
               <input
                 className="input mt-2"
@@ -509,6 +594,44 @@ export default function AdminPaymentRecordPage() {
                 placeholder="Search name, picker ID, period, notes, or paid by"
               />
             </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-slate-700">
+                Period from
+                <input
+                  className="input mt-2"
+                  type="date"
+                  value={periodFilterDraft.fromDate}
+                  onChange={event => setPeriodFilterDraft(current => ({ ...current, fromDate: event.target.value }))}
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-700">
+                Period to
+                <input
+                  className="input mt-2"
+                  type="date"
+                  value={periodFilterDraft.toDate}
+                  onChange={event => setPeriodFilterDraft(current => ({ ...current, toDate: event.target.value }))}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleApplyPeriodFilter}
+              className="rounded-full border border-forest-200 px-4 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50"
+            >
+              Apply period filter
+            </button>
+            <button
+              type="button"
+              onClick={handleClearPeriodFilter}
+              disabled={!periodFilter.fromDate && !periodFilter.toDate && !periodFilterDraft.fromDate && !periodFilterDraft.toDate}
+              className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              Clear period
+            </button>
             <button
               type="button"
               onClick={handleExportExcel}
@@ -518,6 +641,11 @@ export default function AdminPaymentRecordPage() {
               Download Excel
             </button>
           </div>
+
+          {filterFeedback ? <p className="mt-3 text-sm text-amber-700">{filterFeedback}</p> : null}
+          {!filterFeedback && isPeriodFilterApplied && !loading && filteredRecords.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-600">0 records found for the selected payment period.</p>
+          ) : null}
         </div>
 
         {error ? <p className="mt-4 text-sm text-rose-600">{error}</p> : null}
