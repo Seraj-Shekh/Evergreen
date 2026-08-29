@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
-import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus, createUserAccounts, removeUserAccounts, addIncomeRecord, addIncomeRecordsBulk, deleteIncomeRecord, listIncomeRecords, getTopPickers, listExpensePlans, saveExpensePlan, deleteExpensePlan, getPaymentPreview, listPaymentRecords, createPayment, listFineRecords, createFineRecords, updateFineRecord, deleteFineRecord, downloadFineAttachment } from '../controllers/adminController.js';
+import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus, createUserAccounts, removeUserAccounts, addIncomeRecord, addIncomeRecordsBulk, deleteIncomeRecord, listIncomeRecords, getTopPickers, listExpensePlans, saveExpensePlan, deleteExpensePlan, getPaymentPreview, listPaymentRecords, createPayment, getOutstandingPayments, listFineRecords, createFineRecords, updateFineRecord, deleteFineRecord, downloadFineAttachment } from '../controllers/adminController.js';
 import { requireAdminAuth } from '../middleware/adminAuth.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 
@@ -76,6 +76,7 @@ router.get('/top-pickers', getTopPickers);
 router.delete('/income/:id', deleteIncomeRecord);
 
 router.get('/payments/preview', getPaymentPreview);
+router.get('/payments/outstanding', getOutstandingPayments);
 router.get('/payments', listPaymentRecords);
 router.post(
   '/payments',

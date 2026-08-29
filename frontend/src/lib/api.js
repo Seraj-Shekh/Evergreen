@@ -247,6 +247,11 @@ export const createAdminPaymentRecord = async payload =>
     body: JSON.stringify(payload),
   });
 
+export const fetchAdminOutstandingPayments = async () =>
+  request('/api/admin/payments/outstanding', {
+    headers: jsonHeaders(getAdminToken()),
+  });
+
 export const fetchAdminFineRecords = async params => {
   const query = new URLSearchParams();
 

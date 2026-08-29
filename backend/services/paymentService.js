@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import Applicant from '../models/Applicant.js';
+import UserAccount from '../models/UserAccount.js';
 import IncomeRecord from '../models/IncomeRecord.js';
 import ExpenseRecord from '../models/ExpenseRecord.js';
 import PaymentRecord from '../models/PaymentRecord.js';
@@ -9,6 +10,12 @@ import { ensureExpenseRecordsForApplicant } from './expenseService.js';
 const toUtcDate = value => {
   const date = value instanceof Date ? value : new Date(value);
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+};
+
+const addOneDay = value => {
+  const date = toUtcDate(value);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date;
 };
 
 const endOfUtcDay = value => {
@@ -138,4 +145,79 @@ export const createPaymentRecord = async ({ applicantId, fromDate, toDate, paidA
   });
 
   return { summary, paymentRecord };
+};
+
+export const listOutstandingPayments = async () => {
+  const latestIncomeByApplicant = await IncomeRecord.aggregate([
+    { $group: { _id: '$applicantId', latestIncomeDate: { $max: '$date' } } },
+  ]);
+
+  if (!latestIncomeByApplicant.length) {
+    return [];
+  }
+
+  const applicantIds = latestIncomeByApplicant.map(entry => entry._id);
+
+  const [lastPaymentByApplicant, applicants, userAccounts] = await Promise.all([
+    PaymentRecord.aggregate([
+      { $match: { applicantId: { $in: applicantIds } } },
+      { $group: { _id: '$applicantId', lastPaidToDate: { $max: '$toDate' } } },
+    ]),
+    Applicant.find({ _id: { $in: applicantIds } }).select('_id fullName email groupName createdAt').lean(),
+    UserAccount.find({ applicantId: { $in: applicantIds } }).select('applicantId pickerId').lean(),
+  ]);
+
+  const lastPaidToDateByApplicantId = new Map(lastPaymentByApplicant.map(entry => [String(entry._id), entry.lastPaidToDate]));
+  const applicantById = new Map(applicants.map(applicant => [String(applicant._id), applicant]));
+  const pickerIdByApplicantId = new Map(userAccounts.map(account => [String(account.applicantId), account.pickerId || '']));
+
+  const outstandingEntries = [];
+
+  for (const entry of latestIncomeByApplicant) {
+    const applicantId = String(entry._id);
+    const applicant = applicantById.get(applicantId);
+    if (!applicant) {
+      continue;
+    }
+
+    const latestIncomeDate = toUtcDate(entry.latestIncomeDate);
+    const lastPaidToDate = lastPaidToDateByApplicantId.get(applicantId);
+    const outstandingFromDate = lastPaidToDate
+      ? addOneDay(lastPaidToDate)
+      : toUtcDate(applicant.createdAt || latestIncomeDate);
+
+    if (outstandingFromDate > latestIncomeDate) {
+      continue;
+    }
+
+    // eslint-disable-next-line no-await-in-loop
+    const summary = await getPaymentSummaryForApplicant({
+      applicantId,
+      fromDate: outstandingFromDate,
+      toDate: latestIncomeDate,
+    });
+
+    if (summary.netPayable <= 0) {
+      continue;
+    }
+
+    outstandingEntries.push({
+      applicantId,
+      fullName: applicant.fullName,
+      email: applicant.email,
+      groupName: applicant.groupName || '',
+      pickerId: pickerIdByApplicantId.get(applicantId) || '',
+      lastPaidToDate: lastPaidToDate || null,
+      outstandingFromDate,
+      outstandingToDate: latestIncomeDate,
+      incomeTotal: summary.incomeTotal,
+      expenseTotal: summary.expenseTotal,
+      fineTotal: summary.fineTotal,
+      outstandingAmount: summary.netPayable,
+    });
+  }
+
+  outstandingEntries.sort((left, right) => right.outstandingAmount - left.outstandingAmount);
+
+  return outstandingEntries;
 };

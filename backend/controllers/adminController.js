@@ -11,7 +11,7 @@ import ExpenseRecord from '../models/ExpenseRecord.js';
 import FineRecord from '../models/FineRecord.js';
 import { createAdminToken } from '../services/adminToken.js';
 import emailService from '../services/emailService.js';
-import { createPaymentRecord, getPaymentSummaryForApplicant } from '../services/paymentService.js';
+import { createPaymentRecord, getPaymentSummaryForApplicant, listOutstandingPayments } from '../services/paymentService.js';
 import { buildExactGroupRegex, getExpenseTypeDefaults, normalizeGroupName, rebuildExpenseRecordsForPlan, ensureExpenseRecordsForApplicant, getCurrentExpensePlanForApplicant } from '../services/expenseService.js';
 import {
   createFineRecordsForApplicants,
@@ -1358,6 +1358,25 @@ export const createPayment = async (req, res, next) => {
       return res.status(409).json({ success: false, message: 'A payment already exists for this period' });
     }
 
+    return next(error);
+  }
+};
+
+export const getOutstandingPayments = async (req, res, next) => {
+  try {
+    const outstandingPayments = await listOutstandingPayments();
+
+    return res.json({
+      success: true,
+      data: {
+        outstandingPayments,
+        summary: {
+          count: outstandingPayments.length,
+          totalOutstanding: outstandingPayments.reduce((sum, entry) => sum + entry.outstandingAmount, 0),
+        },
+      },
+    });
+  } catch (error) {
     return next(error);
   }
 };

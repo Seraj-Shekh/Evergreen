@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import PasswordField from '../components/PasswordField.jsx';
-import { adminLogin, clearAdminToken, createAdminPaymentRecord, fetchAdminPaymentPreview, fetchAdminPaymentRecords, fetchApplicant, getAdminToken } from '../lib/api.js';
+import { adminLogin, clearAdminToken, createAdminPaymentRecord, fetchAdminOutstandingPayments, fetchAdminPaymentPreview, fetchAdminPaymentRecords, fetchApplicant, getAdminToken } from '../lib/api.js';
 
 const loginInitial = { username: '', password: '' };
 
@@ -90,6 +90,20 @@ const buildPaymentExportRows = records => records.map(record => {
   };
 });
 
+const buildOutstandingExportRows = entries => entries.map(entry => ({
+  Applicant: entry.fullName,
+  Email: entry.email,
+  'Picker ID': entry.pickerId || '—',
+  Group: entry.groupName || '—',
+  'Last paid until': entry.lastPaidToDate ? formatDateOnlyUtc(entry.lastPaidToDate) : 'Never paid',
+  'Outstanding from': formatDateOnlyUtc(entry.outstandingFromDate),
+  'Outstanding to': formatDateOnlyUtc(entry.outstandingToDate),
+  Income: formatEuro(entry.incomeTotal),
+  Expense: formatEuro(entry.expenseTotal),
+  Fine: formatEuro(entry.fineTotal),
+  'Outstanding amount': formatEuro(entry.outstandingAmount),
+}));
+
 export default function AdminPaymentRecordPage() {
   const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAdminToken()));
@@ -104,6 +118,12 @@ export default function AdminPaymentRecordPage() {
   const [periodFilter, setPeriodFilter] = useState(emptyPeriodFilter);
   const [paymentRecords, setPaymentRecords] = useState([]);
   const [summary, setSummary] = useState({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 });
+  const [outstandingPayments, setOutstandingPayments] = useState([]);
+  const [outstandingSummary, setOutstandingSummary] = useState({ count: 0, totalOutstanding: 0 });
+  const [outstandingLoading, setOutstandingLoading] = useState(false);
+  const [outstandingError, setOutstandingError] = useState('');
+  const [outstandingSearch, setOutstandingSearch] = useState('');
+  const [selectedApplicantId, setSelectedApplicantId] = useState(null);
   const [selectedPaymentRecord, setSelectedPaymentRecord] = useState(null);
   const [selectedApplicant, setSelectedApplicant] = useState(null);
   const [settlementLoading, setSettlementLoading] = useState(false);
@@ -117,10 +137,15 @@ export default function AdminPaymentRecordPage() {
     if (!isAuthenticated) {
       setPaymentRecords([]);
       setSummary({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 });
+      setOutstandingPayments([]);
+      setOutstandingSummary({ count: 0, totalOutstanding: 0 });
+      setOutstandingError('');
+      setOutstandingSearch('');
       setSearch('');
       setFilterFeedback('');
       setPeriodFilterDraft(emptyPeriodFilter);
       setPeriodFilter(emptyPeriodFilter);
+      setSelectedApplicantId(null);
       setSelectedPaymentRecord(null);
       setSelectedApplicant(null);
       setSettlementForm(emptySettlementForm);
@@ -145,9 +170,27 @@ export default function AdminPaymentRecordPage() {
     }
   };
 
+  const loadOutstandingPayments = async () => {
+    setOutstandingLoading(true);
+    setOutstandingError('');
+
+    try {
+      const response = await fetchAdminOutstandingPayments();
+      setOutstandingPayments(response.data.outstandingPayments || []);
+      setOutstandingSummary(response.data.summary || { count: 0, totalOutstanding: 0 });
+    } catch (loadError) {
+      setOutstandingPayments([]);
+      setOutstandingSummary({ count: 0, totalOutstanding: 0 });
+      setOutstandingError(loadError.message || 'Failed to load outstanding payments');
+    } finally {
+      setOutstandingLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (isAuthenticated) {
       void loadPayments();
+      void loadOutstandingPayments();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
@@ -172,14 +215,24 @@ export default function AdminPaymentRecordPage() {
     clearAdminToken();
     setIsAuthenticated(false);
     setPaymentRecords([]);
+    setOutstandingPayments([]);
+    setOutstandingSummary({ count: 0, totalOutstanding: 0 });
+    setOutstandingError('');
+    setOutstandingSearch('');
     setError('');
     setFilterFeedback('');
     setPeriodFilterDraft(emptyPeriodFilter);
     setPeriodFilter(emptyPeriodFilter);
+    setSelectedApplicantId(null);
     setSelectedPaymentRecord(null);
     setSelectedApplicant(null);
     setSettlementForm(emptySettlementForm);
     setSettlementPreview(null);
+  };
+
+  const handleRefreshAll = () => {
+    void loadPayments();
+    void loadOutstandingPayments();
   };
 
   const handleApplyPeriodFilter = () => {
@@ -209,6 +262,7 @@ export default function AdminPaymentRecordPage() {
   };
 
   const closeSettlementModal = () => {
+    setSelectedApplicantId(null);
     setSelectedPaymentRecord(null);
     setSelectedApplicant(null);
     setSettlementLoading(false);
@@ -226,6 +280,7 @@ export default function AdminPaymentRecordPage() {
       return;
     }
 
+    setSelectedApplicantId(applicantId);
     setSelectedPaymentRecord(record);
     setSelectedApplicant(null);
     setSettlementLoading(true);
@@ -237,6 +292,37 @@ export default function AdminPaymentRecordPage() {
       toDate: record.toDate ? String(record.toDate).slice(0, 10) : '',
       paidAmount: String(record.paidAmount ?? ''),
       notes: record.notes || '',
+    });
+
+    try {
+      const response = await fetchApplicant(applicantId);
+      setSelectedApplicant(response.data?.applicant || null);
+    } catch (loadError) {
+      setSettlementError(loadError.message || 'Failed to load payout details');
+    } finally {
+      setSettlementLoading(false);
+    }
+  };
+
+  const openOutstandingModal = async entry => {
+    const applicantId = entry?.applicantId;
+    if (!applicantId) {
+      setError('Unable to open outstanding payment details');
+      return;
+    }
+
+    setSelectedApplicantId(applicantId);
+    setSelectedPaymentRecord(null);
+    setSelectedApplicant(null);
+    setSettlementLoading(true);
+    setSettlementError('');
+    setSettlementSuccess('');
+    setSettlementPreview(null);
+    setSettlementForm({
+      fromDate: entry.outstandingFromDate ? String(entry.outstandingFromDate).slice(0, 10) : '',
+      toDate: entry.outstandingToDate ? String(entry.outstandingToDate).slice(0, 10) : '',
+      paidAmount: '',
+      notes: '',
     });
 
     try {
@@ -325,8 +411,10 @@ export default function AdminPaymentRecordPage() {
       });
 
       setSettlementSuccess('Payment settlement created and email sent');
-      await loadPayments();
-      await openSettlementModal(selectedPaymentRecord);
+      await Promise.all([loadPayments(), loadOutstandingPayments()]);
+
+      const response = await fetchApplicant(selectedApplicant._id);
+      setSelectedApplicant(response.data?.applicant || null);
       await loadSettlementPreview(settlementForm);
     } catch (createError) {
       setSettlementError(createError.message || 'Failed to create settlement');
@@ -407,20 +495,31 @@ export default function AdminPaymentRecordPage() {
     return accumulator;
   }, { count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 }), [filteredRecords]);
 
+  const filteredOutstandingPayments = useMemo(() => {
+    const query = outstandingSearch.trim().toLowerCase();
+    if (!query) {
+      return outstandingPayments;
+    }
+
+    return outstandingPayments.filter(entry => {
+      const fields = [entry.fullName, entry.email, entry.pickerId, entry.groupName].join(' ').toLowerCase();
+      return fields.includes(query);
+    });
+  }, [outstandingPayments, outstandingSearch]);
+
   const paymentHistory = useMemo(() => {
-    const applicantId = selectedPaymentRecord?.applicantId?._id || selectedPaymentRecord?.applicantId;
-    if (!applicantId) {
+    if (!selectedApplicantId) {
       return [];
     }
 
     return paymentRecords
       .filter(record => {
         const recordApplicantId = record?.applicantId?._id || record?.applicantId;
-        return String(recordApplicantId) === String(applicantId);
+        return String(recordApplicantId) === String(selectedApplicantId);
       })
       .slice()
       .sort((left, right) => new Date(right.paidAt || right.createdAt || 0) - new Date(left.paidAt || left.createdAt || 0));
-  }, [paymentRecords, selectedPaymentRecord]);
+  }, [paymentRecords, selectedApplicantId]);
 
   const handleExportExcel = () => {
     if (!filteredRecords.length) {
@@ -467,6 +566,51 @@ export default function AdminPaymentRecordPage() {
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (exportError) {
       setError(exportError.message || 'Failed to export payment records');
+    }
+  };
+
+  const handleExportOutstandingExcel = () => {
+    if (!filteredOutstandingPayments.length) {
+      setOutstandingError('No outstanding payments to export');
+      return;
+    }
+
+    try {
+      const rows = buildOutstandingExportRows(filteredOutstandingPayments);
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      worksheet['!cols'] = [
+        { wch: 24 },
+        { wch: 30 },
+        { wch: 14 },
+        { wch: 18 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 18 },
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Outstanding Payments');
+
+      const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+      anchor.href = url;
+      anchor.download = `outstanding-payments-${stamp}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (exportError) {
+      setOutstandingError(exportError.message || 'Failed to export outstanding payments');
     }
   };
 
@@ -530,7 +674,7 @@ export default function AdminPaymentRecordPage() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={loadPayments}
+            onClick={handleRefreshAll}
             className="rounded-full border border-forest-200 px-4 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50"
           >
             Refresh
@@ -578,10 +722,105 @@ export default function AdminPaymentRecordPage() {
         </div>
       </div>
 
+      <div className="mt-6 rounded-3xl border border-amber-100 bg-amber-50/40 p-5 shadow-soft">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Outstanding payments</h2>
+            <p className="text-sm text-slate-500">Pickers with recorded income that hasn't been paid out yet, based on their latest recorded day.</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Total outstanding</p>
+            <p className="text-xl font-semibold text-amber-700">{formatEuro(outstandingSummary.totalOutstanding)}</p>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <label className="block w-full text-sm font-medium text-slate-700 sm:max-w-sm">
+            Search
+            <input
+              className="input mt-2"
+              value={outstandingSearch}
+              onChange={event => setOutstandingSearch(event.target.value)}
+              placeholder="Search name, picker ID, or group"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={handleExportOutstandingExcel}
+            disabled={outstandingLoading || !filteredOutstandingPayments.length}
+            className="inline-flex items-center justify-center rounded-full bg-amber-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            Download Excel
+          </button>
+        </div>
+
+        <p className="mt-3 text-sm text-slate-500">Showing {filteredOutstandingPayments.length} of {outstandingPayments.length} pickers with an outstanding balance.</p>
+
+        {outstandingError ? <p className="mt-3 text-sm text-rose-600">{outstandingError}</p> : null}
+        {outstandingLoading ? <p className="mt-3 text-sm text-slate-600">Loading outstanding payments…</p> : null}
+
+        <div className="mt-4 overflow-hidden rounded-2xl border border-amber-100 bg-white">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Applicant</th>
+                  <th className="px-4 py-3 font-semibold">Picker ID</th>
+                  <th className="px-4 py-3 font-semibold">Group</th>
+                  <th className="px-4 py-3 font-semibold">Last paid until</th>
+                  <th className="px-4 py-3 font-semibold">Outstanding period</th>
+                  <th className="px-4 py-3 font-semibold">Outstanding amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {!outstandingLoading && filteredOutstandingPayments.length > 0 ? filteredOutstandingPayments.map(entry => (
+                  <tr
+                    key={entry.applicantId}
+                    className="cursor-pointer hover:bg-amber-50/60"
+                    onClick={() => void openOutstandingModal(entry)}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={event => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        void openOutstandingModal(entry);
+                      }
+                    }}
+                  >
+                    <td className="px-4 py-3 text-slate-700">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900">{entry.fullName}</p>
+                        <p className="text-xs text-slate-500">{entry.email}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">{entry.pickerId || '—'}</td>
+                    <td className="px-4 py-3 text-slate-700">{entry.groupName || '—'}</td>
+                    <td className="px-4 py-3 text-slate-700">{entry.lastPaidToDate ? formatDateOnlyUtc(entry.lastPaidToDate) : 'Never paid'}</td>
+                    <td className="px-4 py-3 text-slate-700">{formatDateOnlyUtc(entry.outstandingFromDate)} → {formatDateOnlyUtc(entry.outstandingToDate)}</td>
+                    <td className="px-4 py-3 font-semibold text-amber-700">{formatEuro(entry.outstandingAmount)}</td>
+                  </tr>
+                )) : null}
+                {!outstandingLoading && filteredOutstandingPayments.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-8 text-center text-slate-500" colSpan="6">
+                      {outstandingError
+                        ? 'Unable to load outstanding payments.'
+                        : outstandingPayments.length === 0
+                          ? 'All caught up — no outstanding payments.'
+                          : 'No outstanding payments match your search.'}
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <div className="mt-6 rounded-3xl border border-forest-100 bg-white p-5 shadow-soft">
         <div className="border-b border-forest-100 pb-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Filters</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Payment Records</h2>
             <p className="text-sm text-slate-500">Filter by payment period and search text. Showing {filteredRecords.length} records out of {summary.count} loaded records.</p>
           </div>
           <div className="mt-4 grid gap-4 lg:grid-cols-2 lg:items-end">
@@ -722,7 +961,7 @@ export default function AdminPaymentRecordPage() {
         </div>
       </div>
 
-      {selectedPaymentRecord ? (
+      {selectedApplicantId ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center px-3 py-3 sm:items-center sm:px-4 sm:py-6">
           <div className="absolute inset-0 bg-slate-900/50" onClick={closeSettlementModal} />
           <div className="relative z-10 max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-[28px] bg-white shadow-[0_30px_90px_rgba(15,23,42,0.25)]">
