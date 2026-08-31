@@ -52,6 +52,7 @@ const addDaysToDateInput = (value, days) => {
 
 const createIncomeRow = (seed = {}) => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+  recordId: seed.recordId || '',
   date: seed.date || '',
   location: seed.location || 'Lieksa',
   berryType: seed.berryType || 'Blueberry',
@@ -214,6 +215,7 @@ export default function AdminIncomeRecordPage() {
 
     setIncomeRows([
       createIncomeRow({
+        recordId: record._id,
         date: formatDateInput(new Date(record.date)),
         location: record.location || 'Lieksa',
         berryType: record.berryType || 'Blueberry',
@@ -360,6 +362,7 @@ export default function AdminIncomeRecordPage() {
       const response = await addAdminIncomeRecordsBulk({
         applicantId: selectedApplicant._id,
         records: incomeRows.map(row => ({
+          recordId: row.recordId || undefined,
           date: row.date,
           location: row.location,
           berryType: row.berryType,

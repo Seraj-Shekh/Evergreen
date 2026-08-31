@@ -843,32 +843,17 @@ export const addIncomeRecord = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid date format' });
     }
 
-    let incomeRecord = await IncomeRecord.findOne({
+    const incomeRecord = new IncomeRecord({
       applicantId,
-      date: { $gte: dayBounds.dayStart, $lte: dayBounds.dayEnd },
+      date: dayBounds.dayStart,
+      location: locationValue,
+      berryType: berryTypeValue,
+      berryWeightKg: berryWeight,
+      carrotWeightKg: carrotWeight,
+      amount: amountVal,
+      calculatedIncome,
     });
-
-    if (incomeRecord) {
-      incomeRecord.location = locationValue;
-      incomeRecord.berryType = berryTypeValue;
-      incomeRecord.berryWeightKg = berryWeight;
-      incomeRecord.carrotWeightKg = carrotWeight;
-      incomeRecord.amount = amountVal;
-      incomeRecord.calculatedIncome = calculatedIncome;
-      await incomeRecord.save();
-    } else {
-      incomeRecord = new IncomeRecord({
-        applicantId,
-        date: dayBounds.dayStart,
-        location: locationValue,
-        berryType: berryTypeValue,
-        berryWeightKg: berryWeight,
-        carrotWeightKg: carrotWeight,
-        amount: amountVal,
-        calculatedIncome,
-      });
-      await incomeRecord.save();
-    }
+    await incomeRecord.save();
 
     const userAccount = await UserAccount.findOne({ applicantId }).lean();
     if (userAccount) {
@@ -971,9 +956,16 @@ export const addIncomeRecordsBulk = async (req, res, next) => {
         throw error;
       }
 
+      const rawRecordId = String(record?.recordId || '').trim();
+      if (rawRecordId && !mongoose.isValidObjectId(rawRecordId)) {
+        const error = new Error(`Row ${rowNumber}: invalid recordId`);
+        error.statusCode = 400;
+        throw error;
+      }
+
       return {
+        recordId: rawRecordId || null,
         date: dayBounds.dayStart,
-        dayEnd: dayBounds.dayEnd,
         location: locationValue,
         berryType: berryTypeValue,
         berryWeightKg: berryWeight,
@@ -990,12 +982,20 @@ export const addIncomeRecordsBulk = async (req, res, next) => {
 
     await session.withTransaction(async () => {
       for (const record of normalizedRecords) {
-        let incomeRecord = await IncomeRecord.findOne({
-          applicantId,
-          date: { $gte: record.date, $lte: record.dayEnd },
-        }).session(session);
+        // Rows only target an existing document when the admin explicitly picked "Edit" on it.
+        // Otherwise every row is a brand-new record, even if another record already exists for the same day.
+        let incomeRecord = record.recordId
+          ? await IncomeRecord.findOne({ _id: record.recordId, applicantId }).session(session)
+          : null;
+
+        if (record.recordId && !incomeRecord) {
+          const error = new Error('One of the records to update could not be found. It may have been deleted.');
+          error.statusCode = 404;
+          throw error;
+        }
 
         if (incomeRecord) {
+          incomeRecord.date = record.date;
           incomeRecord.location = record.location;
           incomeRecord.berryType = record.berryType;
           incomeRecord.berryWeightKg = record.berryWeightKg;

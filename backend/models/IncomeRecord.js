@@ -15,8 +15,8 @@ const incomeRecordSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Ensure unique daily record per applicant
-incomeRecordSchema.index({ applicantId: 1, date: 1 }, { unique: true, background: true });
+// Not unique: a picker can have multiple records on the same day (e.g. different berry types).
+incomeRecordSchema.index({ applicantId: 1, date: 1 }, { background: true });
 
 const IncomeRecord = mongoose.model('IncomeRecord', incomeRecordSchema);
 
