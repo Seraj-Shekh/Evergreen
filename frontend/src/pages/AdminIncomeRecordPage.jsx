@@ -15,7 +15,13 @@ import {
 const loginInitial = { username: '', password: '' };
 const searchInitial = { pickerId: '' };
 const berryTypeOptions = ['Blueberry', 'Cowberry', 'Cloudberry', 'Lingonberry'];
-const cartWeightStep = 1.06;
+const cartTypes = [
+  { id: 'cart1', label: 'Cart 1', weightPerCart: 1.06 },
+  { id: 'cart2', label: 'Cart 2', weightPerCart: 1.25 },
+  { id: 'cart3', label: 'Cart 3', weightPerCart: 1.30 },
+];
+const defaultCartTypeId = cartTypes[0].id;
+const getCartTypeWeight = cartTypeId => cartTypes.find(type => type.id === cartTypeId)?.weightPerCart ?? cartTypes[0].weightPerCart;
 const cartOptions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 const parseDateInput = value => {
@@ -59,6 +65,7 @@ const createIncomeRow = (seed = {}) => ({
   berryWeightKg: seed.berryWeightKg ?? '',
   carrotWeightKg: seed.carrotWeightKg || '0.00',
   cartMode: seed.cartMode || 'preset',
+  cartType: seed.cartType || defaultCartTypeId,
   cartCount: seed.cartCount ?? '0',
   amount: seed.amount ?? '',
 });
@@ -86,16 +93,18 @@ const formatDisplayDate = value => {
 const getCartPresetFromWeight = weightValue => {
   const weight = Number(weightValue);
   if (!Number.isFinite(weight) || weight < 0) {
-    return { cartMode: 'custom', cartCount: 'custom' };
+    return { cartMode: 'custom', cartCount: 'custom', cartType: defaultCartTypeId };
   }
 
-  for (const count of cartOptions) {
-    if (Math.abs((count * cartWeightStep) - weight) < 0.005) {
-      return { cartMode: 'preset', cartCount: String(count) };
+  for (const cartType of cartTypes) {
+    for (const count of cartOptions) {
+      if (Math.abs((count * cartType.weightPerCart) - weight) < 0.005) {
+        return { cartMode: 'preset', cartCount: String(count), cartType: cartType.id };
+      }
     }
   }
 
-  return { cartMode: 'custom', cartCount: 'custom' };
+  return { cartMode: 'custom', cartCount: 'custom', cartType: defaultCartTypeId };
 };
 
 const calculateRowTotal = row => {
@@ -141,13 +150,22 @@ export default function AdminIncomeRecordPage() {
         return row;
       }
 
+      if (field === 'cartType') {
+        if (row.cartMode === 'custom') {
+          return { ...row, cartType: value };
+        }
+
+        const carrotWeightKg = formatNumber(Number(row.cartCount) * getCartTypeWeight(value));
+        return { ...row, cartType: value, carrotWeightKg };
+      }
+
       if (field === 'cartCount') {
         if (value === 'custom') {
           return { ...row, cartMode: 'custom', cartCount: value };
         }
 
         const cartCount = Number(value);
-        const carrotWeightKg = formatNumber(cartCount * cartWeightStep);
+        const carrotWeightKg = formatNumber(cartCount * getCartTypeWeight(row.cartType));
         return { ...row, cartMode: 'preset', cartCount: value, carrotWeightKg };
       }
 
@@ -211,7 +229,7 @@ export default function AdminIncomeRecordPage() {
   };
 
   const handleEditExistingRecord = record => {
-    const { cartMode, cartCount } = getCartPresetFromWeight(record.carrotWeightKg);
+    const { cartMode, cartCount, cartType } = getCartPresetFromWeight(record.carrotWeightKg);
 
     setIncomeRows([
       createIncomeRow({
@@ -221,6 +239,7 @@ export default function AdminIncomeRecordPage() {
         berryType: record.berryType || 'Blueberry',
         carrotWeightKg: formatNumber(record.carrotWeightKg),
         cartMode,
+        cartType,
         cartCount,
         berryWeightKg: String(record.berryWeightKg ?? ''),
         amount: String(record.amount ?? ''),
@@ -323,8 +342,9 @@ export default function AdminIncomeRecordPage() {
         date: nextDate,
         location: lastRow?.location || 'Lieksa',
         berryType: lastRow?.berryType || 'Blueberry',
-        carrotWeightKg: lastRow?.cartMode === 'custom' ? lastRow.carrotWeightKg : formatNumber(Number(lastRow?.cartCount || 0) * cartWeightStep),
+        carrotWeightKg: lastRow?.cartMode === 'custom' ? lastRow.carrotWeightKg : formatNumber(Number(lastRow?.cartCount || 0) * getCartTypeWeight(lastRow?.cartType || defaultCartTypeId)),
         cartMode: lastRow?.cartMode || 'preset',
+        cartType: lastRow?.cartType || defaultCartTypeId,
         cartCount: lastRow?.cartCount ?? '0',
       })];
     });
@@ -604,6 +624,20 @@ export default function AdminIncomeRecordPage() {
                         </select>
                       </label>
                       <label className="block text-sm font-medium text-slate-700">
+                        Cart type
+                        <select
+                          className="input mt-2"
+                          value={row.cartType}
+                          onChange={event => handleFieldChange(row.id, 'cartType', event.target.value)}
+                        >
+                          {cartTypes.map(type => (
+                            <option key={type.id} value={type.id}>
+                              {type.label} ({formatNumber(type.weightPerCart)} kg/cart)
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block text-sm font-medium text-slate-700">
                         Cart wt
                         <select
                           className="input mt-2"
@@ -612,7 +646,7 @@ export default function AdminIncomeRecordPage() {
                         >
                           {cartOptions.map(option => (
                             <option key={option} value={option}>
-                              {option} cart ({formatNumber(option * cartWeightStep)})
+                              {option} cart ({formatNumber(option * getCartTypeWeight(row.cartType))})
                             </option>
                           ))}
                           <option value="custom">Custom</option>
