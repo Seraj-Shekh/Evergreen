@@ -1373,6 +1373,7 @@ export const getOutstandingPayments = async (req, res, next) => {
         summary: {
           count: outstandingPayments.length,
           totalOutstanding: outstandingPayments.reduce((sum, entry) => sum + entry.outstandingAmount, 0),
+          totalNetBerryWeightKg: outstandingPayments.reduce((sum, entry) => sum + entry.netBerryWeightKg, 0),
         },
       },
     });

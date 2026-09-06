@@ -224,20 +224,28 @@ export const listOutstandingPayments = async () => {
 
   const outstandingEntries = resolvedCandidates
     .filter(({ summary }) => summary.netPayable > 0)
-    .map(({ candidate, summary }) => ({
-      applicantId: candidate.applicantId,
-      fullName: candidate.applicant.fullName,
-      email: candidate.applicant.email,
-      groupName: candidate.applicant.groupName || '',
-      pickerId: pickerIdByApplicantId.get(candidate.applicantId) || '',
-      lastPaidToDate: candidate.lastPaidToDate || null,
-      outstandingFromDate: candidate.outstandingFromDate,
-      outstandingToDate: candidate.latestIncomeDate,
-      incomeTotal: summary.incomeTotal,
-      expenseTotal: summary.expenseTotal,
-      fineTotal: summary.fineTotal,
-      outstandingAmount: summary.netPayable,
-    }));
+    .map(({ candidate, summary }) => {
+      const netBerryWeightKg = (summary.incomeRecords || []).reduce(
+        (sum, record) => sum + (Number(record.berryWeightKg || 0) - Number(record.carrotWeightKg || 0)),
+        0
+      );
+
+      return {
+        applicantId: candidate.applicantId,
+        fullName: candidate.applicant.fullName,
+        email: candidate.applicant.email,
+        groupName: candidate.applicant.groupName || '',
+        pickerId: pickerIdByApplicantId.get(candidate.applicantId) || '',
+        lastPaidToDate: candidate.lastPaidToDate || null,
+        outstandingFromDate: candidate.outstandingFromDate,
+        outstandingToDate: candidate.latestIncomeDate,
+        incomeTotal: summary.incomeTotal,
+        expenseTotal: summary.expenseTotal,
+        fineTotal: summary.fineTotal,
+        netBerryWeightKg,
+        outstandingAmount: summary.netPayable,
+      };
+    });
 
   outstandingEntries.sort((left, right) => right.outstandingAmount - left.outstandingAmount);
 

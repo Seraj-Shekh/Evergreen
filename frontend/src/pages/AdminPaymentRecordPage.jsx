@@ -101,6 +101,7 @@ const buildOutstandingExportRows = entries => entries.map(entry => ({
   Income: formatEuro(entry.incomeTotal),
   Expense: formatEuro(entry.expenseTotal),
   Fine: formatEuro(entry.fineTotal),
+  'Net berry (kg)': formatNumber(entry.netBerryWeightKg),
   'Outstanding amount': formatEuro(entry.outstandingAmount),
 }));
 
@@ -119,7 +120,7 @@ export default function AdminPaymentRecordPage() {
   const [paymentRecords, setPaymentRecords] = useState([]);
   const [summary, setSummary] = useState({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 });
   const [outstandingPayments, setOutstandingPayments] = useState([]);
-  const [outstandingSummary, setOutstandingSummary] = useState({ count: 0, totalOutstanding: 0 });
+  const [outstandingSummary, setOutstandingSummary] = useState({ count: 0, totalOutstanding: 0, totalNetBerryWeightKg: 0 });
   const [outstandingLoading, setOutstandingLoading] = useState(false);
   const [outstandingError, setOutstandingError] = useState('');
   const [outstandingSearch, setOutstandingSearch] = useState('');
@@ -138,7 +139,7 @@ export default function AdminPaymentRecordPage() {
       setPaymentRecords([]);
       setSummary({ count: 0, paidAmount: 0, incomeTotal: 0, expenseTotal: 0, fineTotal: 0, netPayable: 0 });
       setOutstandingPayments([]);
-      setOutstandingSummary({ count: 0, totalOutstanding: 0 });
+      setOutstandingSummary({ count: 0, totalOutstanding: 0, totalNetBerryWeightKg: 0 });
       setOutstandingError('');
       setOutstandingSearch('');
       setSearch('');
@@ -177,10 +178,10 @@ export default function AdminPaymentRecordPage() {
     try {
       const response = await fetchAdminOutstandingPayments();
       setOutstandingPayments(response.data.outstandingPayments || []);
-      setOutstandingSummary(response.data.summary || { count: 0, totalOutstanding: 0 });
+      setOutstandingSummary(response.data.summary || { count: 0, totalOutstanding: 0, totalNetBerryWeightKg: 0 });
     } catch (loadError) {
       setOutstandingPayments([]);
-      setOutstandingSummary({ count: 0, totalOutstanding: 0 });
+      setOutstandingSummary({ count: 0, totalOutstanding: 0, totalNetBerryWeightKg: 0 });
       setOutstandingError(loadError.message || 'Failed to load outstanding payments');
     } finally {
       setOutstandingLoading(false);
@@ -216,7 +217,7 @@ export default function AdminPaymentRecordPage() {
     setIsAuthenticated(false);
     setPaymentRecords([]);
     setOutstandingPayments([]);
-    setOutstandingSummary({ count: 0, totalOutstanding: 0 });
+    setOutstandingSummary({ count: 0, totalOutstanding: 0, totalNetBerryWeightKg: 0 });
     setOutstandingError('');
     setOutstandingSearch('');
     setError('');
@@ -589,6 +590,7 @@ export default function AdminPaymentRecordPage() {
         { wch: 12 },
         { wch: 12 },
         { wch: 12 },
+        { wch: 14 },
         { wch: 18 },
       ];
 
@@ -728,9 +730,15 @@ export default function AdminPaymentRecordPage() {
             <h2 className="text-lg font-semibold text-slate-900">Outstanding payments</h2>
             <p className="text-sm text-slate-500">Pickers with recorded income that hasn't been paid out yet, based on their latest recorded day.</p>
           </div>
-          <div className="text-right">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Total outstanding</p>
-            <p className="text-xl font-semibold text-amber-700">{formatEuro(outstandingSummary.totalOutstanding)}</p>
+          <div className="flex gap-4 text-right">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">Total net berry</p>
+              <p className="text-xl font-semibold text-emerald-700">{formatNumber(outstandingSummary.totalNetBerryWeightKg)} kg</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">Total outstanding</p>
+              <p className="text-xl font-semibold text-amber-700">{formatEuro(outstandingSummary.totalOutstanding)}</p>
+            </div>
           </div>
         </div>
 
@@ -769,6 +777,7 @@ export default function AdminPaymentRecordPage() {
                   <th className="px-4 py-3 font-semibold">Group</th>
                   <th className="px-4 py-3 font-semibold">Last paid until</th>
                   <th className="px-4 py-3 font-semibold">Outstanding period</th>
+                  <th className="px-4 py-3 font-semibold">Net berry</th>
                   <th className="px-4 py-3 font-semibold">Outstanding amount</th>
                 </tr>
               </thead>
@@ -797,12 +806,13 @@ export default function AdminPaymentRecordPage() {
                     <td className="px-4 py-3 text-slate-700">{entry.groupName || '—'}</td>
                     <td className="px-4 py-3 text-slate-700">{entry.lastPaidToDate ? formatDateOnlyUtc(entry.lastPaidToDate) : 'Never paid'}</td>
                     <td className="px-4 py-3 text-slate-700">{formatDateOnlyUtc(entry.outstandingFromDate)} → {formatDateOnlyUtc(entry.outstandingToDate)}</td>
+                    <td className="px-4 py-3 text-slate-700">{formatNumber(entry.netBerryWeightKg)} kg</td>
                     <td className="px-4 py-3 font-semibold text-amber-700">{formatEuro(entry.outstandingAmount)}</td>
                   </tr>
                 )) : null}
                 {!outstandingLoading && filteredOutstandingPayments.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-slate-500" colSpan="6">
+                    <td className="px-4 py-8 text-center text-slate-500" colSpan="7">
                       {outstandingError
                         ? 'Unable to load outstanding payments.'
                         : outstandingPayments.length === 0
