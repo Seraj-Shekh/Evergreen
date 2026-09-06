@@ -18,6 +18,22 @@ const addOneDay = value => {
   return date;
 };
 
+const runWithConcurrency = async (items, limit, worker) => {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(items[currentIndex]);
+    }
+  });
+
+  await Promise.all(runners);
+  return results;
+};
+
 const endOfUtcDay = value => {
   const date = toUtcDate(value);
   date.setUTCHours(23, 59, 59, 999);
@@ -171,51 +187,57 @@ export const listOutstandingPayments = async () => {
   const applicantById = new Map(applicants.map(applicant => [String(applicant._id), applicant]));
   const pickerIdByApplicantId = new Map(userAccounts.map(account => [String(account.applicantId), account.pickerId || '']));
 
-  const outstandingEntries = [];
+  const candidates = latestIncomeByApplicant
+    .map(entry => {
+      const applicantId = String(entry._id);
+      const applicant = applicantById.get(applicantId);
+      if (!applicant) {
+        return null;
+      }
 
-  for (const entry of latestIncomeByApplicant) {
-    const applicantId = String(entry._id);
-    const applicant = applicantById.get(applicantId);
-    if (!applicant) {
-      continue;
-    }
+      const latestIncomeDate = toUtcDate(entry.latestIncomeDate);
+      const lastPaidToDate = lastPaidToDateByApplicantId.get(applicantId);
+      const outstandingFromDate = lastPaidToDate
+        ? addOneDay(lastPaidToDate)
+        : toUtcDate(applicant.createdAt || latestIncomeDate);
 
-    const latestIncomeDate = toUtcDate(entry.latestIncomeDate);
-    const lastPaidToDate = lastPaidToDateByApplicantId.get(applicantId);
-    const outstandingFromDate = lastPaidToDate
-      ? addOneDay(lastPaidToDate)
-      : toUtcDate(applicant.createdAt || latestIncomeDate);
+      if (outstandingFromDate > latestIncomeDate) {
+        return null;
+      }
 
-    if (outstandingFromDate > latestIncomeDate) {
-      continue;
-    }
+      return { applicantId, applicant, lastPaidToDate, outstandingFromDate, latestIncomeDate };
+    })
+    .filter(Boolean);
 
-    // eslint-disable-next-line no-await-in-loop
+  // Resolve applicant summaries with bounded concurrency instead of one at a time -
+  // sequential awaits here previously caused this endpoint to time out in production
+  // once the picker roster grew, since each summary is several DB round trips.
+  const resolvedCandidates = await runWithConcurrency(candidates, 10, async candidate => {
     const summary = await getPaymentSummaryForApplicant({
-      applicantId,
-      fromDate: outstandingFromDate,
-      toDate: latestIncomeDate,
+      applicantId: candidate.applicantId,
+      fromDate: candidate.outstandingFromDate,
+      toDate: candidate.latestIncomeDate,
     });
 
-    if (summary.netPayable <= 0) {
-      continue;
-    }
+    return { candidate, summary };
+  });
 
-    outstandingEntries.push({
-      applicantId,
-      fullName: applicant.fullName,
-      email: applicant.email,
-      groupName: applicant.groupName || '',
-      pickerId: pickerIdByApplicantId.get(applicantId) || '',
-      lastPaidToDate: lastPaidToDate || null,
-      outstandingFromDate,
-      outstandingToDate: latestIncomeDate,
+  const outstandingEntries = resolvedCandidates
+    .filter(({ summary }) => summary.netPayable > 0)
+    .map(({ candidate, summary }) => ({
+      applicantId: candidate.applicantId,
+      fullName: candidate.applicant.fullName,
+      email: candidate.applicant.email,
+      groupName: candidate.applicant.groupName || '',
+      pickerId: pickerIdByApplicantId.get(candidate.applicantId) || '',
+      lastPaidToDate: candidate.lastPaidToDate || null,
+      outstandingFromDate: candidate.outstandingFromDate,
+      outstandingToDate: candidate.latestIncomeDate,
       incomeTotal: summary.incomeTotal,
       expenseTotal: summary.expenseTotal,
       fineTotal: summary.fineTotal,
       outstandingAmount: summary.netPayable,
-    });
-  }
+    }));
 
   outstandingEntries.sort((left, right) => right.outstandingAmount - left.outstandingAmount);
 
