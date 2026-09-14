@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PasswordField from '../components/PasswordField.jsx';
 import {
@@ -9,6 +9,7 @@ import {
   fetchApplicant,
   fetchAdminIncomeRecords,
   fetchApplicants,
+  fetchServerTime,
   getAdminToken,
 } from '../lib/api.js';
 
@@ -22,7 +23,7 @@ const cartTypes = [
 ];
 const defaultCartTypeId = cartTypes[0].id;
 const getCartTypeWeight = cartTypeId => cartTypes.find(type => type.id === cartTypeId)?.weightPerCart ?? cartTypes[0].weightPerCart;
-const cartOptions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+const cartOptions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40];
 
 const parseDateInput = value => {
   const text = String(value || '').trim();
@@ -93,7 +94,7 @@ const formatDisplayDate = value => {
 const getCartPresetFromWeight = weightValue => {
   const weight = Number(weightValue);
   if (!Number.isFinite(weight) || weight < 0) {
-    return { cartMode: 'custom', cartCount: 'custom', cartType: defaultCartTypeId };
+    return { cartMode: 'preset', cartCount: '0', cartType: defaultCartTypeId };
   }
 
   for (const cartType of cartTypes) {
@@ -104,7 +105,10 @@ const getCartPresetFromWeight = weightValue => {
     }
   }
 
-  return { cartMode: 'custom', cartCount: 'custom', cartType: defaultCartTypeId };
+  // No exact preset match - back into a custom cart count under the default cart type
+  // so the count still lines up with the recorded weight.
+  const impliedCount = Math.round((weight / getCartTypeWeight(defaultCartTypeId)) * 100) / 100;
+  return { cartMode: 'custom', cartCount: String(impliedCount), cartType: defaultCartTypeId };
 };
 
 const calculateRowTotal = row => {
@@ -141,6 +145,30 @@ export default function AdminIncomeRecordPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState('');
+  const [maxIncomeDate, setMaxIncomeDate] = useState(todayDate);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchServerTime()
+      .then(serverTime => {
+        if (cancelled || !serverTime) {
+          return;
+        }
+
+        const serverDate = formatDateInput(new Date(serverTime));
+        if (serverDate) {
+          setMaxIncomeDate(serverDate);
+        }
+      })
+      .catch(() => {
+        // Fall back to the device's own clock if the server time can't be reached.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const estimatedTotal = useMemo(() => incomeRows.reduce((sum, row) => sum + calculateRowTotal(row), 0), [incomeRows]);
 
@@ -151,17 +179,14 @@ export default function AdminIncomeRecordPage() {
       }
 
       if (field === 'cartType') {
-        if (row.cartMode === 'custom') {
-          return { ...row, cartType: value };
-        }
-
-        const carrotWeightKg = formatNumber(Number(row.cartCount) * getCartTypeWeight(value));
+        // Cart count (preset or custom) always multiplies by the currently selected cart type.
+        const carrotWeightKg = formatNumber((Number(row.cartCount) || 0) * getCartTypeWeight(value));
         return { ...row, cartType: value, carrotWeightKg };
       }
 
-      if (field === 'cartCount') {
+      if (field === 'cartCountPreset') {
         if (value === 'custom') {
-          return { ...row, cartMode: 'custom', cartCount: value };
+          return { ...row, cartMode: 'custom' };
         }
 
         const cartCount = Number(value);
@@ -169,8 +194,12 @@ export default function AdminIncomeRecordPage() {
         return { ...row, cartMode: 'preset', cartCount: value, carrotWeightKg };
       }
 
-      if (field === 'carrotWeightKg') {
-        return { ...row, cartMode: 'custom', cartCount: 'custom', carrotWeightKg: value };
+      if (field === 'cartCountCustom') {
+        const cartCount = Number(value);
+        const carrotWeightKg = Number.isFinite(cartCount)
+          ? formatNumber(cartCount * getCartTypeWeight(row.cartType))
+          : row.carrotWeightKg;
+        return { ...row, cartMode: 'custom', cartCount: value, carrotWeightKg };
       }
 
       return { ...row, [field]: value };
@@ -342,7 +371,7 @@ export default function AdminIncomeRecordPage() {
         date: nextDate,
         location: lastRow?.location || 'Lieksa',
         berryType: lastRow?.berryType || 'Blueberry',
-        carrotWeightKg: lastRow?.cartMode === 'custom' ? lastRow.carrotWeightKg : formatNumber(Number(lastRow?.cartCount || 0) * getCartTypeWeight(lastRow?.cartType || defaultCartTypeId)),
+        carrotWeightKg: formatNumber(Number(lastRow?.cartCount || 0) * getCartTypeWeight(lastRow?.cartType || defaultCartTypeId)),
         cartMode: lastRow?.cartMode || 'preset',
         cartType: lastRow?.cartType || defaultCartTypeId,
         cartCount: lastRow?.cartCount ?? '0',
@@ -597,7 +626,7 @@ export default function AdminIncomeRecordPage() {
                         <input
                           className="input mt-2"
                           type="date"
-                          max={todayDate}
+                          max={maxIncomeDate}
                           value={row.date}
                           onChange={event => handleFieldChange(row.id, 'date', event.target.value)}
                         />
@@ -642,7 +671,7 @@ export default function AdminIncomeRecordPage() {
                         <select
                           className="input mt-2"
                           value={row.cartMode === 'custom' ? 'custom' : row.cartCount}
-                          onChange={event => handleFieldChange(row.id, 'cartCount', event.target.value)}
+                          onChange={event => handleFieldChange(row.id, 'cartCountPreset', event.target.value)}
                         >
                           {cartOptions.map(option => (
                             <option key={option} value={option}>
@@ -652,15 +681,18 @@ export default function AdminIncomeRecordPage() {
                           <option value="custom">Custom</option>
                         </select>
                         {row.cartMode === 'custom' ? (
-                          <input
-                            className="input mt-2"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={row.carrotWeightKg}
-                            onChange={event => handleFieldChange(row.id, 'carrotWeightKg', event.target.value)}
-                            placeholder="Enter cart weight manually"
-                          />
+                          <div className="mt-2">
+                            <input
+                              className="input"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={row.cartCount}
+                              onChange={event => handleFieldChange(row.id, 'cartCountCustom', event.target.value)}
+                              placeholder="Enter number of carts"
+                            />
+                            <p className="mt-1 text-xs text-slate-500">= {row.carrotWeightKg} kg</p>
+                          </div>
                         ) : null}
                       </label>
                       <label className="block text-sm font-medium text-slate-700">

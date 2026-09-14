@@ -66,6 +66,11 @@ export const downloadProtectedFile = async ({ path, token, filename = 'attachmen
   return suggestedFilename;
 };
 
+export const fetchServerTime = async () => {
+  const data = await request('/health', { headers: jsonHeaders() });
+  return data?.serverTime || null;
+};
+
 export const submitApplication = async payload => {
   return request('/api/applications', {
     method: 'POST',

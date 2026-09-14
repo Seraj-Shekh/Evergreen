@@ -9,6 +9,7 @@ import {
   deleteAdminFineRecord,
   fetchAdminFineRecords,
   fetchApplicants,
+  fetchServerTime,
   getAdminToken,
   updateAdminFineRecord,
 } from '../lib/api.js';
@@ -108,6 +109,30 @@ export default function AdminFinePage() {
     vatPercent: '0',
     attachment: null,
   });
+  const [maxFineDate, setMaxFineDate] = useState(today);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchServerTime()
+      .then(serverTime => {
+        if (cancelled || !serverTime) {
+          return;
+        }
+
+        const serverDate = new Date(serverTime).toISOString().slice(0, 10);
+        if (serverDate) {
+          setMaxFineDate(serverDate);
+        }
+      })
+      .catch(() => {
+        // Fall back to the device's own clock if the server time can't be reached.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const selectedApplicantIds = useMemo(() => selectedApplicants.map(applicant => applicant._id), [selectedApplicants]);
   const vatAmountPreview = useMemo(() => calculateVatAmount(fineForm.amount, fineForm.vatPercent), [fineForm.amount, fineForm.vatPercent]);
@@ -509,7 +534,7 @@ export default function AdminFinePage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block text-sm font-medium text-slate-700">
                 Date
-                <input className="input mt-2" type="date" max={today} value={fineForm.date} onChange={event => setFineForm(current => ({ ...current, date: event.target.value }))} />
+                <input className="input mt-2" type="date" max={maxFineDate} value={fineForm.date} onChange={event => setFineForm(current => ({ ...current, date: event.target.value }))} />
               </label>
               <label className="block text-sm font-medium text-slate-700">
                 Amount
