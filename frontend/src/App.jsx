@@ -12,6 +12,7 @@ import AdminFinePage from './pages/AdminFinePage.jsx';
 import AdminExpensePage from './pages/AdminExpensePage.jsx';
 import AdminPaymentRecordPage from './pages/AdminPaymentRecordPage.jsx';
 import AdminTopPickersPage from './pages/AdminTopPickersPage.jsx';
+import AdminAnalyticsPage from './pages/AdminAnalyticsPage.jsx';
 import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx';
 import ResetPasswordPage from './pages/ResetPasswordPage.jsx';
 import UserPortalPage from './pages/UserPortalPage.jsx';
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="/admin/expenses" element={<AdminExpensePage />} />
         <Route path="/admin/payment-record" element={<AdminPaymentRecordPage />} />
         <Route path="/admin/top-pickers" element={<AdminTopPickersPage />} />
+        <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
         <Route path="/portal" element={<UserPortalPage />} />
         <Route path="/portal/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/portal/reset-password" element={<ResetPasswordPage />} />

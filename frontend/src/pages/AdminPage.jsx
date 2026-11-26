@@ -397,6 +397,9 @@ export default function AdminPage() {
         <Link to="/admin/expenses" className="rounded-full border border-forest-200 px-3 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50 sm:px-4">
           Expense manager
         </Link>
+        <Link to="/admin/analytics" className="rounded-full border border-forest-200 px-3 py-2 text-sm font-semibold text-forest-700 transition hover:bg-forest-50 sm:px-4">
+          Analytics
+        </Link>
         <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm">
           <span className="whitespace-nowrap">Rows</span>
           <select

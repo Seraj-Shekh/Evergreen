@@ -257,6 +257,34 @@ export const fetchAdminOutstandingPayments = async () =>
     headers: jsonHeaders(getAdminToken()),
   });
 
+export const fetchAdminSeasonAnalytics = async (params = {}) => {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  return request(`/api/admin/analytics/season-summary${query.toString() ? `?${query.toString()}` : ''}`, {
+    headers: jsonHeaders(getAdminToken()),
+  });
+};
+
+export const fetchAdminDailyBerryPicked = async (params = {}) => {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  return request(`/api/admin/analytics/daily-berry-picked${query.toString() ? `?${query.toString()}` : ''}`, {
+    headers: jsonHeaders(getAdminToken()),
+  });
+};
+
 export const fetchAdminFineRecords = async params => {
   const query = new URLSearchParams();
 

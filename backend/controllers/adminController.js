@@ -12,6 +12,7 @@ import FineRecord from '../models/FineRecord.js';
 import { createAdminToken } from '../services/adminToken.js';
 import emailService from '../services/emailService.js';
 import { createPaymentRecord, getPaymentSummaryForApplicant, listOutstandingPayments } from '../services/paymentService.js';
+import { getSeasonAnalytics, getDailyBerryPicked } from '../services/analyticsService.js';
 import { buildExactGroupRegex, getExpenseTypeDefaults, normalizeGroupName, rebuildExpenseRecordsForPlan, ensureExpenseRecordsForApplicant, getCurrentExpensePlanForApplicant } from '../services/expenseService.js';
 import {
   createFineRecordsForApplicants,
@@ -1378,6 +1379,42 @@ export const getOutstandingPayments = async (req, res, next) => {
       },
     });
   } catch (error) {
+    return next(error);
+  }
+};
+
+export const getAnalyticsSeasonSummary = async (req, res, next) => {
+  try {
+    const { fromDate, toDate } = req.query;
+    const analytics = await getSeasonAnalytics({ fromDate, toDate });
+
+    return res.json({
+      success: true,
+      data: analytics,
+    });
+  } catch (error) {
+    if (String(error.message || '').toLowerCase().includes('cannot be earlier')) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
+    return next(error);
+  }
+};
+
+export const getAnalyticsDailyBerryPicked = async (req, res, next) => {
+  try {
+    const { fromDate, toDate } = req.query;
+    const result = await getDailyBerryPicked({ fromDate, toDate });
+
+    return res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    if (String(error.message || '').toLowerCase().includes('cannot be earlier')) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
     return next(error);
   }
 };

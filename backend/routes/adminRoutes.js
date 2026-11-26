@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
-import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus, createUserAccounts, removeUserAccounts, addIncomeRecord, addIncomeRecordsBulk, deleteIncomeRecord, listIncomeRecords, getTopPickers, listExpensePlans, saveExpensePlan, deleteExpensePlan, getPaymentPreview, listPaymentRecords, createPayment, getOutstandingPayments, listFineRecords, createFineRecords, updateFineRecord, deleteFineRecord, downloadFineAttachment } from '../controllers/adminController.js';
+import { loginAdmin, listApplicants, getApplicantById, updateApplicantStatus, createUserAccounts, removeUserAccounts, addIncomeRecord, addIncomeRecordsBulk, deleteIncomeRecord, listIncomeRecords, getTopPickers, listExpensePlans, saveExpensePlan, deleteExpensePlan, getPaymentPreview, listPaymentRecords, createPayment, getOutstandingPayments, listFineRecords, createFineRecords, updateFineRecord, deleteFineRecord, downloadFineAttachment, getAnalyticsSeasonSummary, getAnalyticsDailyBerryPicked } from '../controllers/adminController.js';
 import { requireAdminAuth } from '../middleware/adminAuth.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 
@@ -117,5 +117,8 @@ router.post(
 );
 router.patch('/expense-plans/:id', saveExpensePlan);
 router.delete('/expense-plans/:id', deleteExpensePlan);
+
+router.get('/analytics/season-summary', getAnalyticsSeasonSummary);
+router.get('/analytics/daily-berry-picked', getAnalyticsDailyBerryPicked);
 
 export default router;

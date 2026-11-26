@@ -18,7 +18,7 @@ const addOneDay = value => {
   return date;
 };
 
-const runWithConcurrency = async (items, limit, worker) => {
+export const runWithConcurrency = async (items, limit, worker) => {
   const results = new Array(items.length);
   let nextIndex = 0;
 
